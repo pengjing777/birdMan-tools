@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+
+{% block title %}收藏的文档{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .bm-layout { display: flex; gap: 24px; min-height: calc(100vh - 120px); }
+
+    .bm-sidebar {
+        width: 280px; flex-shrink: 0; background: var(--card-bg);
+        border-radius: 12px; border: 1px solid var(--border-color);
+        padding: 16px; overflow-y: auto;
+        max-height: calc(100vh - 120px); position: sticky; top: 84px;
+    }
+    .bm-sidebar-header {
+        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        padding: 0 8px 12px; border-bottom: 1px solid var(--border-color);
+        margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+    }
+
+    .bm-list { list-style: none; padding: 0; margin: 0; }
+    .bm-list-item {
+        display: block; padding: 8px 10px; border-radius: 6px;
+        cursor: pointer; transition: background 0.15s; text-decoration: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .bm-list-item:last-child { border-bottom: none; }
+    .bm-list-item:hover { background: #f1f5f9; }
+    .bm-list-item.active { background: #eff6ff; }
+    .bm-list-item .dir {
+        font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2px;
+        display: flex; align-items: center; gap: 4px;
+    }
+    .bm-list-item .dir i { font-size: 0.65rem; }
+    .bm-list-item .name {
+        font-size: 0.9rem; font-weight: 500; color: var(--text-main);
+    }
+    .bm-list-item.active .name { color: var(--primary-color); }
+    .bm-list-item .tag {
+        display: inline-block; font-size: 0.65rem; padding: 1px 6px;
+        border-radius: 3px; margin-top: 4px;
+        background: #f1f5f9; color: var(--text-muted);
+    }
+    .bm-list-item .tag.doc { background: #eff6ff; color: #2563eb; }
+    .bm-list-item .tag.skill { background: #f5f3ff; color: #7c3aed; }
+
+    .bm-content {
+        flex: 1; min-width: 0; background: var(--card-bg); border-radius: 12px;
+        border: 1px solid var(--border-color); padding: 36px 40px;
+        overflow-y: auto; max-height: calc(100vh - 120px);
+    }
+    .bm-toolbar {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 12px; padding: 0 0 16px; margin-bottom: 18px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .bm-toolbar-title {
+        min-width: 0; color: var(--text-muted); font-size: 0.86rem;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .bm-toolbar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .bm-content .empty-state {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; min-height: 50vh; color: var(--text-muted); text-align: center;
+    }
+    .bm-content .empty-state i { font-size: 3rem; margin-bottom: 16px; opacity: 0.4; }
+    .bm-content .empty-state p { margin: 0; font-size: 1rem; }
+
+    .bm-content .markdown-body { line-height: 1.8; color: var(--text-main); font-size: 0.95rem; }
+    .bm-content .markdown-body h1 { font-size: 1.8rem; margin: 0 0 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+    .bm-content .markdown-body h2 { font-size: 1.4rem; margin: 28px 0 12px; }
+    .bm-content .markdown-body h3 { font-size: 1.15rem; margin: 24px 0 10px; }
+    .bm-content .markdown-body h4 { font-size: 1rem; margin: 20px 0 8px; }
+    .bm-content .markdown-body p { margin: 0 0 14px; }
+    .bm-content .markdown-body ul, .bm-content .markdown-body ol { padding-left: 24px; margin: 0 0 14px; }
+    .bm-content .markdown-body li { margin-bottom: 4px; }
+    .bm-content .markdown-body blockquote {
+        margin: 0 0 14px; padding: 8px 16px; border-left: 4px solid var(--primary-color);
+        background: #f8fafc; border-radius: 4px;
+    }
+    .bm-content .markdown-body code {
+        background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.85rem;
+    }
+    .bm-content .markdown-body pre {
+        background: #1e293b; color: #e2e8f0; padding: 16px 20px;
+        border-radius: 8px; overflow-x: auto; margin: 0 0 14px;
+    }
+    .bm-content .markdown-body pre code { background: none; padding: 0; color: inherit; }
+    .bm-content .markdown-body table { width: 100%; border-collapse: collapse; margin: 0 0 14px; }
+    .bm-content .markdown-body th, .bm-content .markdown-body td { padding: 8px 14px; border: 1px solid var(--border-color); text-align: left; }
+    .bm-content .markdown-body th { background: #f8fafc; font-weight: 600; }
+    .bm-content .markdown-body img { max-width: 100%; border-radius: 8px; }
+    .bm-content .markdown-body a { color: var(--primary-color); }
+
+    /* 右侧目录面板 */
+    .toc-panel {
+        width: 220px; flex-shrink: 0; display: none;
+        background: var(--card-bg); border-radius: 12px;
+        border: 1px solid var(--border-color); padding: 16px;
+        overflow-y: auto; max-height: calc(100vh - 120px);
+        position: sticky; top: 84px;
+    }
+    .toc-panel.has-toc { display: block; }
+
+    .toc-panel-header {
+        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        padding: 0 4px 12px; border-bottom: 1px solid var(--border-color);
+        margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+    }
+
+    .toc-list { list-style: none; padding: 0; margin: 0; font-size: 0.82rem; line-height: 1.6; }
+    .toc-list ul { list-style: none; padding-left: 14px; margin: 0; }
+    .toc-list li { margin: 0; }
+    .toc-list a {
+        display: block; padding: 3px 6px; border-radius: 4px;
+        color: var(--text-muted); text-decoration: none;
+        transition: all 0.15s;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .toc-list a:hover { background: #f1f5f9; color: var(--text-main); }
+    .toc-list a.active {
+        background: #eff6ff; color: var(--primary-color); font-weight: 600;
+    }
+    .toc-empty {
+        padding: 16px 4px; font-size: 0.82rem; color: var(--text-muted); text-align: center;
+    }
+
+    @media (max-width: 1200px) {
+        .toc-panel { display: none !important; }
+    }
+
+    .bm-empty {
+        text-align: center; padding: 80px 20px; color: var(--text-muted);
+    }
+    .bm-empty i { font-size: 3rem; display: block; margin-bottom: 16px; opacity: 0.3; }
+    .bm-empty p { margin: 0 0 4px; font-size: 1rem; }
+    .bm-empty .sub { font-size: 0.85rem; }
+
+    .main-content:has(.bm-layout) { max-width: 1440px; }
+
+    @media (max-width: 768px) {
+        .bm-layout { flex-direction: column; }
+        .bm-sidebar { width: 100%; max-height: 300px; position: static; }
+        .bm-content { padding: 20px; max-height: none; }
+    }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+    window.addEventListener('error', function(e) {
+        if (e.target.tagName === 'SCRIPT' && e.target.src.includes('mermaid')) {
+            var s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js';
+            s.onload = function() { window.__mermaidLoaded = true; };
+            document.head.appendChild(s);
+        }
+    }, true);
+    document.querySelector('script[src*="mermaid"]').onload = function() {
+        window.__mermaidLoaded = true;
+    };
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="bm-layout">
+    <aside class="bm-sidebar">
+        <div class="bm-sidebar-header">
+            <i class="fas fa-star" style="color:#eab308;"></i> 收藏的文档
+        </div>
+        <div id="bm-list">
+            <div style="text-align:center;padding:20px;color:var(--text-muted);">
+                <i class="fas fa-spinner fa-spin"></i> 加载中...
+            </div>
+        </div>
+    </aside>
+
+    <main class="bm-content" id="bm-content">
+        <div class="empty-state">
+            <i class="fas fa-star"></i>
+            <p>从左侧列表选择收藏的文档</p>
+        </div>
+    </main>
+
+    <aside class="toc-panel" id="toc-panel">
+        <div class="toc-panel-header">
+            <i class="fas fa-list"></i> 目录
+        </div>
+        <div id="toc-container">
+            <div class="toc-empty">暂无目录</div>
+        </div>
+    </aside>
+</div>
+
+<script>
+    var bookmarksData = [];
+    var currentBookmark = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initMermaid();
+        loadBookmarkList();
+    });
+
+    function initMermaid() {
+        if (typeof mermaid !== 'undefined' && !window.__mermaidReady) {
+            mermaid.initialize({ startOnLoad: false, theme: 'default' });
+            window.__mermaidReady = true;
+        }
+    }
+
+    function renderMermaid() {
+        initMermaid();
+        if (typeof mermaid === 'undefined') return;
+        var elements = document.querySelectorAll('#bm-content .mermaid');
+        if (elements.length === 0) return;
+        try {
+            mermaid.run({ nodes: elements }).catch(function(e) {
+                console.warn('Mermaid render error:', e);
+                try { mermaid.init(undefined, elements); } catch(e2) {}
+            });
+        } catch(e) { console.warn('Mermaid error:', e); }
+    }
+
+    async function loadBookmarkList() {
+        try {
+            var res = await fetch('/api/bookmarks/detail');
+            bookmarksData = await res.json();
+            renderList(bookmarksData);
+        } catch (e) {
+            document.getElementById('bm-list').innerHTML =
+                '<div class="bm-empty" style="padding:30px;"><i class="fas fa-exclamation-triangle" style="color:var(--error-color);"></i><p>加载失败</p></div>';
+        }
+    }
+
+    function renderList(items) {
+        var container = document.getElementById('bm-list');
+        if (!items || items.length === 0) {
+            container.innerHTML =
+                '<div class="bm-empty" style="padding:30px;"><i class="fas fa-star"></i><p>暂无收藏的文档</p><p class="sub" style="font-size:0.82rem;margin-top:8px;">在文档浏览页面点击 ※ 收藏文档</p></div>';
+            return;
+        }
+        var html = '<div class="bm-list">';
+        items.forEach(function(item, idx) {
+            var tagClass = item.source === 'skill-query' ? 'skill' : 'doc';
+            var tagLabel = item.source === 'skill-query' ? '代码' : '文档';
+            html += '<a class="bm-list-item" href="#" onclick="openBookmarkDoc(' + idx + ', this); return false;">';
+            if (item.directory) {
+                html += '<div class="dir"><i class="fas fa-folder"></i> ' +
+                    escapeHtml(item.directory) + '</div>';
+            }
+            html += '<div class="name">' + escapeHtml(item.doc_name.replace(/\.md$/i, '')) + '</div>';
+            html += '<span class="tag ' + tagClass + '">' + tagLabel + '</span>';
+            html += '</a>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+
+        // 如果 URL 有 ?open= 参数，自动打开对应文档
+        var params = new URLSearchParams(window.location.search);
+        var openPath = params.get('open');
+        if (openPath) {
+            var idx = items.findIndex(function(i) { return i.doc_path === openPath; });
+            if (idx >= 0) {
+                var items_el = container.querySelectorAll('.bm-list-item');
+                if (items_el[idx]) openBookmarkDoc(idx, items_el[idx]);
+            }
+        }
+    }
+
+    async function openBookmarkDoc(idx, el) {
+        document.querySelectorAll('.bm-list-item.active').forEach(function(n) { n.classList.remove('active'); });
+        if (el) el.classList.add('active');
+
+        var item = bookmarksData[idx];
+        if (!item) return;
+
+        var content = document.getElementById('bm-content');
+        content.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> 加载文档中...</div>';
+
+        var apiView = item.source === 'skill-query' ? '/api/skills/view' : '/api/docs/view';
+
+        try {
+            var res = await fetch(apiView + '?path=' + encodeURIComponent(item.doc_path));
+            var data = await res.json();
+            if (res.ok) {
+                currentBookmark = item;
+                var icon = item.source === 'skill-query' ? 'fa-code' : 'fa-file-lines';
+                var tagLabel = item.source === 'skill-query' ? '代码' : '文档';
+                var apiOpen = item.source === 'skill-query' ? '/api/skills/open' : '/api/docs/open';
+                var toolbar = '<div class="bm-toolbar">' +
+                    '<div class="bm-toolbar-title"><i class="fas ' + icon + '"></i> ' + escapeHtml(data.name || item.doc_path) + '</div>' +
+                    '<div class="bm-toolbar-actions"><button class="btn btn-outline" onclick="openBookmarkedMarkdown()"><i class="fas fa-up-right-from-square"></i> 打开文档</button></div>' +
+                  '</div>';
+                content.innerHTML = toolbar + '<div class="markdown-body">' + data.html + '</div>';
+                content.scrollTop = 0;
+                setTimeout(renderMermaid, 100);
+                buildTOC();
+            } else {
+                content.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle" style="color:var(--error-color);"></i><p>' + escapeHtml(data.error || '加载失败') + '</p></div>';
+                clearTOC();
+            }
+        } catch (e) {
+            content.innerHTML = '<div class="empty-state"><i class="fas fa-wifi" style="color:var(--error-color);"></i><p>连接后端异常</p></div>';
+            clearTOC();
+        }
+    }
+
+    async function openBookmarkedMarkdown() {
+        if (!currentBookmark) return;
+        var apiOpen = currentBookmark.source === 'skill-query' ? '/api/skills/open' : '/api/docs/open';
+        try {
+            var res = await fetch(apiOpen, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: currentBookmark.doc_path })
+            });
+            var data = await res.json();
+            if (!res.ok) {
+                alert('打开失败：' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('打开失败：连接后端异常');
+        }
+    }
+
+    /* ---- 右侧目录 (TOC) ---- */
+
+    function clearTOC() {
+        document.getElementById('toc-panel').classList.remove('has-toc');
+        document.getElementById('toc-container').innerHTML = '<div class="toc-empty">暂无目录</div>';
+        var c = document.getElementById('bm-content');
+        c.removeEventListener('scroll', onTOCScroll);
+    }
+
+    function buildTOC() {
+        var container = document.getElementById('toc-container');
+        var panel = document.getElementById('toc-panel');
+        var headings = document.querySelectorAll('#bm-content .markdown-body h1, #bm-content .markdown-body h2, #bm-content .markdown-body h3, #bm-content .markdown-body h4, #bm-content .markdown-body h5, #bm-content .markdown-body h6');
+
+        if (headings.length === 0) {
+            clearTOC();
+            return;
+        }
+
+        var idCounts = {};
+        headings.forEach(function(h) {
+            if (!h.id) {
+                var baseId = (h.textContent || '').trim().toLowerCase()
+                    .replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '');
+                if (!baseId) baseId = 'heading';
+                if (idCounts[baseId]) {
+                    idCounts[baseId]++;
+                    h.id = baseId + '_' + idCounts[baseId];
+                } else {
+                    idCounts[baseId] = 1;
+                    h.id = baseId;
+                }
+            }
+        });
+
+        var items = [];
+        headings.forEach(function(h) {
+            items.push({ level: parseInt(h.tagName[1]), text: h.textContent.trim(), id: h.id });
+        });
+
+        var html = '<ul class="toc-list">';
+        var parentLevels = [];
+
+        items.forEach(function(item) {
+            var level = item.level;
+            while (parentLevels.length > 0 && parentLevels[parentLevels.length - 1] > level) {
+                html += '</li></ul>';
+                parentLevels.pop();
+            }
+            if (parentLevels.length > 0 && parentLevels[parentLevels.length - 1] === level) {
+                html += '</li>';
+            }
+            if (parentLevels.length === 0 || parentLevels[parentLevels.length - 1] < level) {
+                html += '<ul>';
+                parentLevels.push(level);
+            }
+            html += '<li><a href="#' + item.id + '" data-toc-id="' + item.id + '">' + escapeHtml(item.text) + '</a>';
+        });
+
+        while (parentLevels.length > 0) {
+            html += '</li></ul>';
+            parentLevels.pop();
+        }
+
+        container.innerHTML = html;
+        panel.classList.add('has-toc');
+
+        container.addEventListener('click', function(e) {
+            var link = e.target.closest('a');
+            if (link) {
+                e.preventDefault();
+                scrollToHeading(link.getAttribute('data-toc-id'));
+            }
+        });
+
+        var content = document.getElementById('bm-content');
+        content.removeEventListener('scroll', onTOCScroll);
+        content.addEventListener('scroll', onTOCScroll);
+        setTimeout(updateTOCActive, 200);
+    }
+
+    function scrollToHeading(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var content = document.getElementById('bm-content');
+        var offset = 20;
+        var elRect = el.getBoundingClientRect();
+        var contentRect = content.getBoundingClientRect();
+        var target = content.scrollTop + (elRect.top - contentRect.top) - offset;
+        content.scrollTo({ top: target, behavior: 'smooth' });
+        updateTOCActive(id);
+    }
+
+    var _tocRAF = null;
+
+    function onTOCScroll() {
+        if (_tocRAF) return;
+        _tocRAF = requestAnimationFrame(function() {
+            _tocRAF = null;
+            updateTOCActive();
+        });
+    }
+
+    function updateTOCActive(activeId) {
+        var content = document.getElementById('bm-content');
+        var headings = document.querySelectorAll('#bm-content .markdown-body h1, #bm-content .markdown-body h2, #bm-content .markdown-body h3, #bm-content .markdown-body h4, #bm-content .markdown-body h5, #bm-content .markdown-body h6');
+        var links = document.querySelectorAll('.toc-list a');
+
+        if (!activeId) {
+            var contentRect = content.getBoundingClientRect();
+            var contentTop = contentRect.top;
+            for (var i = 0; i < headings.length; i++) {
+                var h = headings[i];
+                var hRect = h.getBoundingClientRect();
+                if (hRect.top - contentTop - 80 <= 0) {
+                    activeId = h.id;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        links.forEach(function(a) {
+            if (a.getAttribute('data-toc-id') === activeId) {
+                a.classList.add('active');
+            } else {
+                a.classList.remove('active');
+            }
+        });
+    }
+
+    function escapeHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+</script>
+{% endblock %}

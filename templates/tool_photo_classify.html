@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}照片分类整理{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .classify-container { max-width: 960px; margin: 0 auto; padding: 20px; }
+    .config-section { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .config-section h3 { margin: 0 0 16px; font-size: 1rem; color: var(--text-main); }
+    .form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { flex: 1; min-width: 200px; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+    .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--input-bg); color: var(--text-main); font-size: 0.9rem; box-sizing: border-box; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #e91e63; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #c2185b; }
+    .btn-success { background: #16a34a; color: #fff; }
+    .btn-success:hover:not(:disabled) { background: #15803d; }
+    .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-main); }
+    .btn-outline:hover:not(:disabled) { background: var(--hover-bg); }
+
+    .summary-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .summary-item { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 20px; text-align: center; flex: 1; min-width: 120px; }
+    .summary-item .num { font-size: 1.5rem; font-weight: 700; color: #e91e63; }
+    .summary-item .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+
+    .group-list { list-style: none; padding: 0; margin: 0; }
+    .group-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 6px; background: var(--card-bg); }
+    .group-item .date { font-weight: 600; color: var(--text-main); }
+    .group-item .info { color: var(--text-muted); font-size: 0.85rem; }
+    .group-item .badge { background: rgba(233,30,99,0.1); color: #e91e63; padding: 2px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+
+    .result-section { margin-top: 20px; }
+    .result-header { font-weight: 600; margin-bottom: 8px; }
+    .result-ok { color: #16a34a; }
+    .result-error { color: #dc2626; }
+    .result-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .result-table th, .result-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
+    .result-table th { color: var(--text-muted); font-weight: 500; }
+
+    .error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 12px; margin-top: 12px; color: #991b1b; font-size: 0.85rem; }
+    .error-box ul { margin: 6px 0 0; padding-left: 20px; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+    .tab-bar { display: flex; gap: 0; margin-bottom: 16px; }
+    .tab-bar button { padding: 8px 20px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }
+    .tab-bar button:first-child { border-radius: 6px 0 0 6px; }
+    .tab-bar button:last-child { border-radius: 0 6px 6px 0; }
+    .tab-bar button.active { background: #e91e63; color: #fff; border-color: #e91e63; }
+    .tab-bar button:not(:last-child) { border-right: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="classify-container">
+    <h2 style="margin: 0 0 20px;"><i class="fas fa-images" style="color: #e91e63;"></i> 照片分类整理</h2>
+
+    <div class="config-section">
+        <h3><i class="fas fa-sliders-h"></i> 配置</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label>源目录（递归扫描位置）</label>
+                <input type="text" id="sourceDir" value="/Volumes/Untitled/DCIM" placeholder="/Volumes/Untitled/DCIM">
+            </div>
+            <div class="form-group">
+                <label>目标目录（保存位置）</label>
+                <input type="text" id="destDir" value="" placeholder="例如: ~/Pictures/已整理">
+            </div>
+            <div class="form-group" style="min-width: 100px; flex: 0 1 auto;">
+                <label>操作方式</label>
+                <select id="modeSelect">
+                    <option value="copy">复制</option>
+                    <option value="move">移动</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="scanBtn" onclick="scanPhotos()"><i class="fas fa-search"></i> 扫描</button>
+            <button class="btn btn-primary" id="inPlaceBtn" onclick="classifyInPlace()">
+                <i class="fas fa-folder-tree"></i> 直接在源目录分类
+            </button>
+        </div>
+        <p style="margin: 8px 0 0; font-size: 0.8rem; color: var(--text-muted);">
+            <i class="fas fa-info-circle"></i>
+            原有功能按照片整理到目标目录。也可以使用下方“直接在源目录分类”，在源目录内建立 YYYY-MM-DD 日期目录并移动文件。
+        </p>
+    </div>
+
+    <div id="scanResult" class="hidden">
+        <div class="summary-bar" id="summaryBar"></div>
+
+        <div class="tab-bar">
+            <button class="active" id="tabGroup" onclick="switchTab('group')">按日期分组</button>
+            <button id="tabAll" onclick="switchTab('all')">全部文件</button>
+        </div>
+
+        <div id="groupView"></div>
+        <div id="allView" class="hidden"></div>
+
+        <div style="margin-top: 16px; text-align: right;">
+            <button class="btn btn-success" id="executeBtn" onclick="executeClassify()">
+                <i class="fas fa-check"></i> 执行整理
+            </button>
+        </div>
+    </div>
+
+    <div id="errorDisplay" class="hidden"></div>
+
+    <div id="resultDisplay" class="hidden result-section"></div>
+</div>
+
+<script>
+let scannedPhotos = [];
+let scannedGroups = [];
+
+function scanPhotos() {
+    const sourceDir = document.getElementById('sourceDir').value.trim();
+    const btn = document.getElementById('scanBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 扫描中...';
+    document.getElementById('scanResult').classList.add('hidden');
+    document.getElementById('errorDisplay').classList.add('hidden');
+    document.getElementById('resultDisplay').classList.add('hidden');
+
+    fetch('/api/photo-classify/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_dir: sourceDir }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.errors && data.errors.length > 0 && data.total === 0) {
+            showError(data.errors);
+            return;
+        }
+        scannedPhotos = data.photos || [];
+        scannedGroups = data.groups || [];
+        renderScanResult(data);
+    })
+    .catch(err => showError([err.message]))
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-search"></i> 扫描';
+    });
+}
+
+function renderScanResult(data) {
+    const groups = data.groups || [];
+    const photos = data.photos || [];
+    const errors = data.errors || [];
+
+    const totalSize = groups.reduce((s, g) => s + g.total_size, 0);
+    document.getElementById('summaryBar').innerHTML = `
+        <div class="summary-item"><div class="num">${groups.length}</div><div class="label">日期分组</div></div>
+        <div class="summary-item"><div class="num">${photos.length}</div><div class="label">照片总数</div></div>
+        <div class="summary-item"><div class="num">${formatSize(totalSize)}</div><div class="label">总大小</div></div>
+    `;
+
+    let groupHtml = '<ul class="group-list">';
+    groups.forEach(g => {
+        groupHtml += `
+            <li class="group-item">
+                <div>
+                    <div class="date">${g.date}</div>
+                    <div class="info">${g.count} 张 &middot; ${formatSize(g.total_size)}</div>
+                </div>
+                <span class="badge">${g.count} 张</span>
+            </li>
+        `;
+    });
+    groupHtml += '</ul>';
+    document.getElementById('groupView').innerHTML = groupHtml;
+
+    let allHtml = '<table class="result-table"><thead><tr><th>文件名</th><th>日期</th><th>大小</th><th>来源</th></tr></thead><tbody>';
+    photos.forEach(p => {
+        allHtml += `<tr><td>${escapeHtml(p.name)}</td><td>${p.date_taken}</td><td>${p.size_str}</td><td style="font-size:0.8rem;color:var(--text-muted);">${escapeHtml(p.path)}</td></tr>`;
+    });
+    allHtml += '</tbody></table>';
+    document.getElementById('allView').innerHTML = allHtml;
+
+    if (errors.length > 0) {
+        showError(errors);
+    }
+
+    document.getElementById('scanResult').classList.remove('hidden');
+}
+
+function executeClassify() {
+    const sourceDir = document.getElementById('sourceDir').value.trim();
+    let destDir = document.getElementById('destDir').value.trim();
+    const mode = document.getElementById('modeSelect').value;
+    const btn = document.getElementById('executeBtn');
+
+    if (!destDir) {
+        destDir = prompt('请输入目标目录（照片将保存到这里）:');
+        if (!destDir) return;
+        document.getElementById('destDir').value = destDir;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 整理中...';
+    document.getElementById('errorDisplay').classList.add('hidden');
+    document.getElementById('resultDisplay').classList.add('hidden');
+
+    fetch('/api/photo-classify/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_dir: sourceDir, dest_dir: destDir, mode: mode }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            showError([data.error].concat(data.errors || []));
+            return;
+        }
+        renderResult(data.result, mode);
+    })
+    .catch(err => showError([err.message]))
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check"></i> 执行整理';
+    });
+}
+
+function classifyInPlace() {
+    const sourceDir = document.getElementById('sourceDir').value.trim();
+    const btn = document.getElementById('inPlaceBtn');
+    if (!sourceDir) {
+        showError(['请输入源目录']);
+        return;
+    }
+    if (!confirm('将在源目录内建立 YYYY-MM-DD 日期目录并移动文件，是否继续？')) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 分类中...';
+    document.getElementById('errorDisplay').classList.add('hidden');
+    document.getElementById('resultDisplay').classList.add('hidden');
+    fetch('/api/photo-classify/in-place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_dir: sourceDir }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            showError([data.error].concat(data.errors || []));
+            return;
+        }
+        renderResult(data.result, 'move');
+    })
+    .catch(err => showError([err.message]))
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-folder-tree"></i> 直接在源目录分类';
+    });
+}
+
+function renderResult(result, mode) {
+    const action = mode === 'copy' ? '已复制' : '已移动';
+    const container = document.getElementById('resultDisplay');
+    let html = `
+        <div class="summary-bar">
+            <div class="summary-item"><div class="num" style="color:#16a34a;">${result.copied + result.moved}</div><div class="label">${action}</div></div>
+            <div class="summary-item"><div class="num" style="color:#eab308;">${result.skipped}</div><div class="label">已跳过</div></div>
+            <div class="summary-item"><div class="num" style="color:#dc2626;">${result.errors}</div><div class="label">失败</div></div>
+        </div>
+        <table class="result-table"><thead><tr><th>状态</th><th>文件</th><th>目标路径</th></tr></thead><tbody>
+    `;
+    (result.details || []).forEach(d => {
+        const statusClass = d.status === 'ok' ? 'result-ok' : 'result-error';
+        const statusIcon = d.status === 'ok' ? 'fa-check-circle' : 'fa-times-circle';
+        const extra = d.error ? ` <span style="color:#dc2626;">(${escapeHtml(d.error)})</span>` : '';
+        html += `<tr class="${statusClass}">
+            <td><i class="fas ${statusIcon}"></i></td>
+            <td>${escapeHtml(d.file)}</td>
+            <td style="font-size:0.8rem;">${escapeHtml(d.to)}${extra}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    container.classList.remove('hidden');
+}
+
+function switchTab(tab) {
+    document.getElementById('tabGroup').classList.toggle('active', tab === 'group');
+    document.getElementById('tabAll').classList.toggle('active', tab === 'all');
+    document.getElementById('groupView').classList.toggle('hidden', tab !== 'group');
+    document.getElementById('allView').classList.toggle('hidden', tab !== 'all');
+}
+
+function showError(errors) {
+    const el = document.getElementById('errorDisplay');
+    el.innerHTML = `<div class="error-box"><strong><i class="fas fa-exclamation-triangle"></i> 提示：</strong>
+        <ul>${errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul></div>`;
+    el.classList.remove('hidden');
+}
+
+function formatSize(size) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let s = size;
+    for (const u of units) {
+        if (s < 1024) return s.toFixed(1) + u;
+        s /= 1024;
+    }
+    return s.toFixed(1) + 'TB';
+}
+
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+</script>
+{% endblock %}

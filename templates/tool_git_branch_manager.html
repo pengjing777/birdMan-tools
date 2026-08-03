@@ -1,0 +1,567 @@
+{% extends "base.html" %}
+
+{% block title %}Git 分支操作{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .git-shell {
+        max-width: 1040px;
+        margin: 0 auto;
+    }
+    .git-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+    }
+    .git-header h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .git-header h1 i { color: #334155; }
+    .status-panel,
+    .project-panel,
+    .branch-panel,
+    .log-panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 18px;
+        margin-bottom: 16px;
+    }
+    .status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .status-item {
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 12px;
+        min-width: 0;
+        background: #f8fafc;
+    }
+    .status-item .label {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin-bottom: 6px;
+    }
+    .status-item .value {
+        color: var(--text-main);
+        font-size: 0.92rem;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        overflow-wrap: anywhere;
+    }
+    .project-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .project-btn {
+        border: 1px solid var(--border-color);
+        background: #fff;
+        color: var(--text-main);
+        border-radius: 6px;
+        padding: 9px 14px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .project-btn:hover:not(:disabled) {
+        border-color: #334155;
+        background: #f8fafc;
+    }
+    .project-btn.active {
+        color: #fff;
+        border-color: #334155;
+        background: #334155;
+    }
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+    .badge.clean { color: #047857; background: #ecfdf5; }
+    .badge.dirty { color: #b45309; background: #fffbeb; }
+    .branch-panel h2,
+    .log-panel h2 {
+        margin: 0 0 14px;
+        font-size: 1rem;
+    }
+    .branch-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 14px;
+    }
+    .branch-toolbar h2 {
+        margin: 0;
+    }
+    .option-check {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #f8fafc;
+        cursor: pointer;
+    }
+    .option-check input {
+        margin-top: 2px;
+        width: 16px;
+        height: 16px;
+        accent-color: #334155;
+        cursor: pointer;
+    }
+    .option-copy {
+        display: grid;
+        gap: 4px;
+    }
+    .option-title {
+        color: var(--text-main);
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+    .option-note {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        line-height: 1.45;
+    }
+    .branch-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+    .branch-btn {
+        border: 1px solid var(--border-color);
+        background: #fff;
+        color: var(--text-main);
+        border-radius: 6px;
+        padding: 9px 14px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .branch-btn:hover:not(:disabled) {
+        border-color: #334155;
+        background: #f8fafc;
+    }
+    .branch-btn.active {
+        color: #fff;
+        border-color: #334155;
+        background: #334155;
+    }
+    .branch-btn:disabled,
+    .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+    .add-row {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+    }
+    .add-row input {
+        flex: 1;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 9px 12px;
+        font-size: 0.9rem;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    }
+    .add-row input:focus {
+        outline: none;
+        border-color: #334155;
+        box-shadow: 0 0 0 3px rgba(51, 65, 85, 0.12);
+    }
+    .message {
+        margin-top: 12px;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 0.86rem;
+        line-height: 1.5;
+    }
+    .message.error {
+        color: #991b1b;
+        border: 1px solid #fecaca;
+        background: #fef2f2;
+    }
+    .message.success {
+        color: #047857;
+        border: 1px solid #bbf7d0;
+        background: #f0fdf4;
+    }
+    .log-list {
+        display: grid;
+        gap: 10px;
+    }
+    .log-item {
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .log-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        background: #f8fafc;
+        color: var(--text-main);
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+    .log-command {
+        color: var(--text-muted);
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+    }
+    .log-output {
+        margin: 0;
+        padding: 12px;
+        color: #0f172a;
+        background: #fff;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 0.82rem;
+        line-height: 1.5;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    }
+    .empty {
+        color: var(--text-muted);
+        border: 1px dashed #cbd5e1;
+        border-radius: 6px;
+        padding: 18px;
+        text-align: center;
+    }
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.45);
+        border-top-color: #fff;
+        border-radius: 50%;
+        display: inline-block;
+        animation: spin 0.7s linear infinite;
+    }
+    .hidden { display: none !important; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 760px) {
+        .git-header,
+        .add-row,
+        .branch-toolbar { flex-direction: column; align-items: stretch; }
+        .status-grid { grid-template-columns: 1fr; }
+        .project-btn,
+        .branch-btn,
+        .add-row .btn { width: 100%; justify-content: center; }
+        .option-check { width: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="git-shell">
+    <div class="git-header">
+        <h1><i class="fas fa-code-branch"></i> Git 分支操作</h1>
+        <button class="btn btn-outline" id="refreshBtn" onclick="loadStatus()">
+            <i class="fas fa-rotate"></i> 刷新
+        </button>
+    </div>
+
+    <section class="project-panel">
+        <div id="projectList" class="project-list"></div>
+    </section>
+
+    <section class="status-panel">
+        <div class="status-grid">
+            <div class="status-item">
+                <div class="label">项目路径</div>
+                <div class="value" id="projectPath">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">远端地址</div>
+                <div class="value" id="remoteUrl">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">当前分支</div>
+                <div class="value" id="currentBranch">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">工作区</div>
+                <div class="value" id="worktreeState">-</div>
+            </div>
+        </div>
+        <div id="statusMessage" class="message error hidden"></div>
+    </section>
+
+    <section class="branch-panel">
+        <div class="branch-toolbar">
+            <h2>分支列表</h2>
+            <label class="option-check" for="mergeReleaseSwitch">
+                <input id="mergeReleaseSwitch" type="checkbox">
+                <span class="option-copy">
+                    <span class="option-title">切换后自动合并 <code>release</code></span>
+                    <span class="option-note">使用最新的 <code>origin/release</code> 合并到目标分支；如有冲突需手动处理</span>
+                </span>
+            </label>
+        </div>
+        <div id="branchList" class="branch-list"></div>
+        <div class="add-row">
+            <input id="newBranch" type="text" placeholder="输入自定义分支名">
+            <button class="btn btn-outline" onclick="addBranch()">
+                <i class="fas fa-plus"></i> 新增
+            </button>
+        </div>
+        <div id="actionMessage" class="message hidden"></div>
+    </section>
+
+    <section class="log-panel">
+        <h2>执行记录</h2>
+        <div id="logList" class="empty">暂无执行记录</div>
+    </section>
+</div>
+
+<script>
+    var gitState = {
+        project_id: '',
+        projects: [],
+        branches: [],
+        current_branch: '',
+        dirty: false,
+        auto_merge_release_after_switch: false
+    };
+
+    document.addEventListener('DOMContentLoaded', loadStatus);
+    document.getElementById('newBranch').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') addBranch();
+    });
+    document.getElementById('mergeReleaseSwitch').addEventListener('change', saveSwitchPreferences);
+
+    function setBusy(busy) {
+        document.querySelectorAll('button, input').forEach(function(el) {
+            el.disabled = busy;
+        });
+    }
+
+    function setMessage(id, text, type) {
+        var el = document.getElementById(id);
+        if (!text) {
+            el.textContent = '';
+            el.className = 'message hidden';
+            return;
+        }
+        el.textContent = text;
+        el.className = 'message ' + (type || 'error');
+    }
+
+    async function loadStatus() {
+        setMessage('statusMessage', '');
+        try {
+            var url = '/api/git-branch-manager/status' + (gitState.project_id ? '?project_id=' + encodeURIComponent(gitState.project_id) : '');
+            var res = await fetch(url);
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.error || '加载失败');
+            gitState = data;
+            renderProjects(data.projects || []);
+            renderStatus(data);
+            renderBranches(data.branches || []);
+            renderSwitchOptions(data);
+        } catch (e) {
+            setMessage('statusMessage', e.message, 'error');
+        }
+    }
+
+    function renderStatus(data) {
+        document.getElementById('projectPath').textContent = data.project_path || '-';
+        document.getElementById('remoteUrl').textContent = data.remote || '-';
+        document.getElementById('currentBranch').textContent = data.current_branch || '-';
+        document.getElementById('worktreeState').innerHTML = data.dirty
+            ? '<span class="badge dirty"><i class="fas fa-circle-exclamation"></i> 有未提交改动 ' + (data.dirty_count || 0) + '</span>'
+            : '<span class="badge clean"><i class="fas fa-check"></i> 干净</span>';
+    }
+
+    function renderSwitchOptions(data) {
+        document.getElementById('mergeReleaseSwitch').checked = !!data.auto_merge_release_after_switch;
+    }
+
+    function renderProjects(projects) {
+        var list = document.getElementById('projectList');
+        if (!projects.length) {
+            list.innerHTML = '<div class="empty">暂无项目</div>';
+            return;
+        }
+        list.innerHTML = projects.map(function(project) {
+            var active = project.id === gitState.project_id;
+            return '<button class="project-btn ' + (active ? 'active' : '') + '" onclick="switchProject(\'' + escapeAttr(project.id) + '\')">' +
+                '<i class="fas ' + (active ? 'fa-folder-open' : 'fa-folder') + '"></i>' +
+                escapeHtml(project.name || project.id) +
+                '</button>';
+        }).join('');
+    }
+
+    function switchProject(projectId) {
+        if (projectId === gitState.project_id) return;
+        gitState.project_id = projectId;
+        renderLogs([]);
+        setMessage('actionMessage', '');
+        loadStatus();
+    }
+
+    function renderBranches(branches) {
+        var list = document.getElementById('branchList');
+        if (!branches.length) {
+            list.innerHTML = '<div class="empty">暂无分支</div>';
+            return;
+        }
+        list.innerHTML = branches.map(function(branch) {
+            var active = branch === gitState.current_branch;
+            return '<button class="branch-btn ' + (active ? 'active' : '') + '" onclick="switchBranch(\'' + escapeAttr(branch) + '\')">' +
+                '<i class="fas ' + (active ? 'fa-check' : 'fa-code-branch') + '"></i>' +
+                escapeHtml(branch) +
+                '</button>';
+        }).join('');
+    }
+
+    async function addBranch() {
+        var input = document.getElementById('newBranch');
+        var branch = input.value.trim();
+        if (!branch) {
+            setMessage('actionMessage', '请输入分支名', 'error');
+            return;
+        }
+        setBusy(true);
+        setMessage('actionMessage', '');
+        try {
+            var res = await fetch('/api/git-branch-manager/branches', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: gitState.project_id, branch: branch }),
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.error || '新增失败');
+            gitState.branches = data.branches || [];
+            input.value = '';
+            renderBranches(gitState.branches);
+            setMessage('actionMessage', '已新增分支：' + branch, 'success');
+        } catch (e) {
+            setMessage('actionMessage', e.message, 'error');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function switchBranch(branch) {
+        if (branch === gitState.current_branch) {
+            setMessage('actionMessage', '当前已经在 ' + branch + ' 分支', 'success');
+            return;
+        }
+        if (gitState.dirty && !confirm('目标项目存在未提交改动，仍然切换到 ' + branch + ' 吗？')) {
+            return;
+        }
+        setBusy(true);
+        setMessage('actionMessage', '');
+        var autoMergeRelease = document.getElementById('mergeReleaseSwitch').checked;
+        var previewCommand = 'git fetch origin --prune && git switch ' + branch + ' && git pull --ff-only';
+        if (autoMergeRelease && branch !== 'release') {
+            previewCommand += ' && git merge --no-edit origin/release';
+        }
+        renderLogs([{ step: '执行中', command: previewCommand, output: '等待 Git 返回...' }]);
+        try {
+            var res = await fetch('/api/git-branch-manager/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_id: gitState.project_id,
+                    branch: branch,
+                    auto_merge_release_after_switch: autoMergeRelease
+                }),
+            });
+            var data = await res.json();
+            renderLogs(data.steps || []);
+            if (!res.ok) throw new Error(data.error || '切换失败');
+            gitState = data;
+            renderStatus(data);
+            renderBranches(data.branches || []);
+            renderSwitchOptions(data);
+            setMessage('actionMessage', data.message || '切换成功', 'success');
+        } catch (e) {
+            setMessage('actionMessage', e.message, 'error');
+            loadStatus();
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function saveSwitchPreferences() {
+        var checkbox = document.getElementById('mergeReleaseSwitch');
+        var previous = !!gitState.auto_merge_release_after_switch;
+        var nextValue = checkbox.checked;
+        checkbox.disabled = true;
+        try {
+            var res = await fetch('/api/git-branch-manager/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auto_merge_release_after_switch: nextValue }),
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.error || '保存选项失败');
+            gitState.auto_merge_release_after_switch = !!data.auto_merge_release_after_switch;
+            setMessage(
+                'actionMessage',
+                gitState.auto_merge_release_after_switch ? '已开启：切换分支后自动合并 release' : '已关闭：切换分支后自动合并 release',
+                'success'
+            );
+        } catch (e) {
+            checkbox.checked = previous;
+            setMessage('actionMessage', e.message, 'error');
+        } finally {
+            checkbox.disabled = false;
+        }
+    }
+
+    function renderLogs(steps) {
+        var list = document.getElementById('logList');
+        if (!steps || !steps.length) {
+            list.className = 'empty';
+            list.textContent = '暂无执行记录';
+            return;
+        }
+        list.className = 'log-list';
+        list.innerHTML = steps.map(function(item) {
+            var output = [item.output, item.error].filter(Boolean).join('\n');
+            return '<div class="log-item">' +
+                '<div class="log-title"><span>' + escapeHtml(item.step || 'Git') + '</span><span class="log-command">' + escapeHtml(item.command || '') + '</span></div>' +
+                '<pre class="log-output">' + escapeHtml(output || '完成') + '</pre>' +
+                '</div>';
+        }).join('');
+    }
+
+    function escapeHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str || '';
+        return d.innerHTML;
+    }
+
+    function escapeAttr(str) {
+        return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+</script>
+{% endblock %}

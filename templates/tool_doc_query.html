@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+
+{% block title %}服务商文档查询{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+    // Mermaid CDN 备选
+    window.addEventListener('error', function(e) {
+        if (e.target.tagName === 'SCRIPT' && e.target.src.includes('mermaid')) {
+            var s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js';
+            s.onload = function() { window.__mermaidLoaded = true; };
+            document.head.appendChild(s);
+        }
+    }, true);
+    // 标记加载完成
+    document.querySelector('script[src*="mermaid"]').onload = function() {
+        window.__mermaidLoaded = true;
+    };
+</script>
+<style>
+    .doc-layout {
+        display: flex;
+        gap: 24px;
+        min-height: calc(100vh - 120px);
+    }
+
+    /* 侧边栏 */
+    .doc-sidebar {
+        width: 280px;
+        flex-shrink: 0;
+        background: var(--card-bg);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        padding: 16px;
+        overflow-y: auto;
+        max-height: calc(100vh - 120px);
+        position: sticky;
+        top: 84px;
+    }
+
+    .doc-sidebar-header {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        padding: 0 8px 12px;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .tree-node {
+        user-select: none;
+    }
+
+    .tree-node-content {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.88rem;
+        transition: background 0.15s;
+        color: var(--text-main);
+        text-decoration: none;
+    }
+
+    .tree-node-content:hover {
+        background: #f1f5f9;
+    }
+
+    .tree-node-content.active {
+        background: #eff6ff;
+        color: var(--primary-color);
+        font-weight: 600;
+    }
+
+    .tree-node-content .icon {
+        width: 16px;
+        text-align: center;
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .tree-node-content .icon.folder {
+        color: #f59e0b;
+    }
+
+    .tree-node-content .icon.file {
+        color: #94a3b8;
+    }
+
+    .tree-children {
+        padding-left: 20px;
+    }
+
+    .tree-children.collapsed {
+        display: none;
+    }
+
+    /* 主内容区 */
+    .doc-content {
+        flex: 1;
+        background: var(--card-bg);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        padding: 36px 40px;
+        overflow-y: auto;
+        max-height: calc(100vh - 120px);
+    }
+
+    .doc-content .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 50vh;
+        color: var(--text-muted);
+        text-align: center;
+    }
+
+    .doc-content .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 16px;
+        opacity: 0.4;
+    }
+
+    .doc-content .empty-state p {
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    /* Markdown 渲染样式 */
+    .markdown-body {
+        line-height: 1.8;
+        color: var(--text-main);
+        font-size: 0.95rem;
+    }
+
+    .markdown-body h1 { font-size: 1.8rem; margin: 0 0 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+    .markdown-body h2 { font-size: 1.4rem; margin: 28px 0 12px; }
+    .markdown-body h3 { font-size: 1.15rem; margin: 24px 0 10px; }
+    .markdown-body h4 { font-size: 1rem; margin: 20px 0 8px; }
+    .markdown-body p { margin: 0 0 14px; }
+    .markdown-body ul, .markdown-body ol { padding-left: 24px; margin: 0 0 14px; }
+    .markdown-body li { margin-bottom: 4px; }
+    .markdown-body blockquote {
+        margin: 0 0 14px;
+        padding: 8px 16px;
+        border-left: 4px solid var(--primary-color);
+        background: #f8fafc;
+        border-radius: 4px;
+    }
+    .markdown-body code {
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.85rem;
+    }
+    .markdown-body pre {
+        background: #1e293b;
+        color: #e2e8f0;
+        padding: 16px 20px;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin: 0 0 14px;
+    }
+    .markdown-body pre code {
+        background: none;
+        padding: 0;
+        color: inherit;
+    }
+    .markdown-body table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0 0 14px;
+    }
+    .markdown-body th, .markdown-body td {
+        padding: 8px 14px;
+        border: 1px solid var(--border-color);
+        text-align: left;
+    }
+    .markdown-body th {
+        background: #f8fafc;
+        font-weight: 600;
+    }
+    .markdown-body img {
+        max-width: 100%;
+        border-radius: 8px;
+    }
+    .markdown-body a { color: var(--primary-color); }
+    .markdown-body hr { border: none; border-top: 1px solid var(--border-color); margin: 24px 0; }
+
+    .markdown-body .mermaid {
+        background: #f8fafc;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 0 0 14px;
+        overflow-x: auto;
+    }
+
+    @media (max-width: 768px) {
+        .doc-layout { flex-direction: column; }
+        .doc-sidebar {
+            width: 100%;
+            max-height: 300px;
+            position: static;
+        }
+        .doc-content {
+            padding: 20px;
+            max-height: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="doc-layout">
+    <aside class="doc-sidebar">
+        <div class="doc-sidebar-header">
+            <i class="fas fa-folder-open"></i> feature-doc
+        </div>
+        <div id="tree-container">
+            <div style="text-align:center; padding:20px; color: var(--text-muted);">
+                <i class="fas fa-spinner fa-spin"></i> 加载中...
+            </div>
+        </div>
+    </aside>
+
+    <main class="doc-content" id="doc-content">
+        <div class="empty-state">
+            <i class="fas fa-file-alt"></i>
+            <p>从左侧目录树选择文档</p>
+        </div>
+    </main>
+</div>
+
+<script>
+    let currentPath = '';
+
+    async function loadTree() {
+        try {
+            const res = await fetch('/api/docs/tree');
+            const tree = await res.json();
+            const container = document.getElementById('tree-container');
+            container.innerHTML = renderTree(tree);
+        } catch (e) {
+            document.getElementById('tree-container').innerHTML =
+                '<div style="text-align:center;padding:20px;color:var(--error-color);"><i class="fas fa-exclamation-triangle"></i> 加载失败</div>';
+        }
+    }
+
+    function renderTree(node) {
+        if (node.type === 'folder') {
+            const hasMd = node.children && node.children.some(c => c.type === 'file');
+            if (!hasMd && node.children) {
+                // 没有 markdown 文件的空文件夹，跳过不显示
+                return '';
+            }
+            let html = '<div class="tree-node">';
+            html += `<div class="tree-node-content" onclick="toggleFolder(this)">
+                <span class="icon folder"><i class="fas fa-chevron-right"></i></span>
+                <span><i class="fas fa-folder"></i></span>
+                <span>${escapeHtml(node.name)}</span>
+            </div>`;
+            html += '<div class="tree-children">';
+            for (const child of (node.children || [])) {
+                html += renderTree(child);
+            }
+            html += '</div></div>';
+            return html;
+        } else {
+            const displayName = node.name.endsWith('.md') ? node.name.slice(0, -3) : node.name;
+            return `<div class="tree-node">
+                <a class="tree-node-content" href="#" onclick="openDoc('${escapeHtml(node.path)}', this); return false;">
+                    <span class="icon file"><i class="fas fa-file"></i></span>
+                    <span>${escapeHtml(displayName)}</span>
+                </a>
+            </div>`;
+        }
+    }
+
+    function toggleFolder(el) {
+        const children = el.nextElementSibling;
+        if (children) {
+            children.classList.toggle('collapsed');
+            const icon = el.querySelector('.icon i');
+            if (icon) {
+                icon.className = children.classList.contains('collapsed')
+                    ? 'fas fa-chevron-right'
+                    : 'fas fa-chevron-down';
+            }
+        }
+    }
+
+    // 默认展开所有文件夹
+    function expandAll() {
+        document.querySelectorAll('.tree-children').forEach(el => el.classList.remove('collapsed'));
+        document.querySelectorAll('.tree-node-content .icon i').forEach(el => el.className = 'fas fa-chevron-down');
+    }
+
+    async function openDoc(path, el) {
+        // 高亮当前选中的文件
+        document.querySelectorAll('.tree-node-content.active').forEach(n => n.classList.remove('active'));
+        if (el) el.classList.add('active');
+
+        currentPath = path;
+        const content = document.getElementById('doc-content');
+        content.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> 加载文档中...</div>';
+
+        try {
+            const res = await fetch('/api/docs/view?path=' + encodeURIComponent(path));
+            const data = await res.json();
+
+            if (res.ok) {
+                // 提取标题作为页面标题
+                let title = path.split('/').pop().replace('.md', '');
+                content.innerHTML = `<div class="markdown-body">${data.html}</div>`;
+                content.scrollTop = 0;
+                // 渲染 Mermaid 图表
+                setTimeout(renderMermaid, 100);
+            } else {
+                content.innerHTML = `<div class="empty-state">
+                    <i class="fas fa-exclamation-triangle" style="color:var(--error-color);"></i>
+                    <p>加载失败: ${escapeHtml(data.error)}</p>
+                </div>`;
+            }
+        } catch (e) {
+            content.innerHTML = `<div class="empty-state">
+                <i class="fas fa-wifi" style="color:var(--error-color);"></i>
+                <p>连接后端异常</p>
+            </div>`;
+        }
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadTree();
+        setTimeout(expandAll, 200);
+    });
+
+    function initMermaid() {
+        if (typeof mermaid !== 'undefined' && !window.__mermaidReady) {
+            mermaid.initialize({ startOnLoad: false, theme: 'default' });
+            window.__mermaidReady = true;
+        }
+    }
+
+    function renderMermaid() {
+        initMermaid();
+        if (typeof mermaid === 'undefined') return;
+        const elements = document.querySelectorAll('.mermaid');
+        if (elements.length === 0) return;
+        try {
+            mermaid.run({ nodes: elements }).catch(function(e) {
+                console.warn('Mermaid render error:', e);
+                // 降级：尝试 init API
+                try { mermaid.init(undefined, elements); } catch(e2) {}
+            });
+        } catch(e) {
+            console.warn('Mermaid run error:', e);
+        }
+    }
+</script>
+{% endblock %}

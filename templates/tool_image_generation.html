@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+
+{% block title %}AI 图片生成{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .image-gen-shell {
+        max-width: 1120px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 380px minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+    }
+    .page-title {
+        max-width: 1120px;
+        margin: 0 auto 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .page-title h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .page-title h1 i { color: #f97316; }
+    .panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 18px;
+    }
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+    .form-group textarea,
+    .form-group select,
+    .form-group input {
+        width: 100%;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 0.92rem;
+        color: var(--text-main);
+        background: #fff;
+        outline: none;
+    }
+    .form-group textarea {
+        min-height: 220px;
+        line-height: 1.6;
+        resize: vertical;
+    }
+    .form-group textarea:focus,
+    .form-group select:focus,
+    .form-group input:focus {
+        border-color: #f97316;
+        box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
+    }
+    .control-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+    .button-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 16px;
+    }
+    .btn-generate {
+        background: #f97316;
+        color: #fff;
+        min-width: 132px;
+        justify-content: center;
+    }
+    .btn-generate:hover:not(:disabled) {
+        background: #ea580c;
+        transform: translateY(-1px);
+    }
+    .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+    }
+    .result-panel {
+        min-height: 620px;
+        display: flex;
+        flex-direction: column;
+    }
+    .result-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+    }
+    .result-toolbar h2 {
+        margin: 0;
+        font-size: 1rem;
+    }
+    .result-meta {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+    }
+    .preview-wrap {
+        flex: 1;
+        min-height: 480px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background:
+            linear-gradient(45deg, #f8fafc 25%, transparent 25%),
+            linear-gradient(-45deg, #f8fafc 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #f8fafc 75%),
+            linear-gradient(-45deg, transparent 75%, #f8fafc 75%);
+        background-size: 24px 24px;
+        background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+    .preview-empty {
+        color: var(--text-muted);
+        text-align: center;
+        line-height: 1.8;
+        padding: 28px;
+    }
+    .preview-empty i {
+        display: block;
+        font-size: 2.2rem;
+        color: #f97316;
+        margin-bottom: 10px;
+    }
+    .preview-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+    .message {
+        margin-top: 14px;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 0.86rem;
+        line-height: 1.5;
+    }
+    .message.error {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+    }
+    .message.info {
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        color: #9a3412;
+    }
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.45);
+        border-top-color: #fff;
+        border-radius: 50%;
+        display: inline-block;
+        animation: spin 0.7s linear infinite;
+    }
+    .hidden { display: none !important; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 900px) {
+        .image-gen-shell { grid-template-columns: 1fr; }
+        .result-panel { min-height: 520px; }
+        .preview-wrap { min-height: 360px; }
+    }
+    @media (max-width: 560px) {
+        .page-title { align-items: flex-start; flex-direction: column; }
+        .control-row { grid-template-columns: 1fr; }
+        .result-toolbar { align-items: flex-start; flex-direction: column; }
+        .button-row .btn { width: 100%; justify-content: center; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h1><i class="fas fa-wand-magic-sparkles"></i> AI 图片生成</h1>
+    <a href="/tools/config-manager" class="btn btn-outline"><i class="fas fa-cog"></i> 配置</a>
+</div>
+
+<div class="image-gen-shell">
+    <section class="panel">
+        <div class="form-group">
+            <label for="prompt">图片需求</label>
+            <textarea id="prompt" placeholder="例如：一张现代中式书房的产品海报，暖色自然光，桌面有一本打开的书和一杯热茶，写实摄影风格"></textarea>
+        </div>
+
+        <div class="control-row">
+            <div class="form-group">
+                <label for="size">尺寸</label>
+                <select id="size">
+                    <option value="1024x1024">1024 x 1024</option>
+                    <option value="1536x1024">1536 x 1024</option>
+                    <option value="1024x1536">1024 x 1536</option>
+                    <option value="auto">自动</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="quality">质量</label>
+                <select id="quality">
+                    <option value="auto">自动</option>
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="button-row">
+            <button class="btn btn-generate" id="generateBtn" onclick="generateImage()">
+                <i class="fas fa-wand-magic-sparkles"></i> 生成图片
+            </button>
+            <button class="btn btn-outline" type="button" onclick="clearPrompt()">
+                <i class="fas fa-eraser"></i> 清空
+            </button>
+        </div>
+
+        <div id="formMessage" class="message error hidden"></div>
+    </section>
+
+    <section class="panel result-panel">
+        <div class="result-toolbar">
+            <div>
+                <h2>生成结果</h2>
+                <div class="result-meta" id="resultMeta">等待生成</div>
+            </div>
+            <a id="downloadBtn" class="btn btn-outline hidden" download="generated-image.png">
+                <i class="fas fa-download"></i> 下载
+            </a>
+        </div>
+        <div class="preview-wrap" id="previewWrap">
+            <div class="preview-empty" id="previewEmpty">
+                <i class="fas fa-image"></i>
+                输入需求后生成图片，结果会显示在这里
+            </div>
+        </div>
+        <div id="revisedPrompt" class="message info hidden"></div>
+    </section>
+</div>
+
+<script>
+    var latestImageSrc = '';
+
+    function setLoading(loading) {
+        var btn = document.getElementById('generateBtn');
+        btn.disabled = loading;
+        btn.innerHTML = loading
+            ? '<span class="spinner"></span> 生成中...'
+            : '<i class="fas fa-wand-magic-sparkles"></i> 生成图片';
+    }
+
+    function showMessage(message) {
+        var box = document.getElementById('formMessage');
+        if (!message) {
+            box.classList.add('hidden');
+            box.textContent = '';
+            return;
+        }
+        box.textContent = message;
+        box.classList.remove('hidden');
+    }
+
+    function showImage(src) {
+        latestImageSrc = src;
+        var wrap = document.getElementById('previewWrap');
+        wrap.innerHTML = '<img alt="生成图片" src="' + src + '">';
+        var downloadBtn = document.getElementById('downloadBtn');
+        downloadBtn.href = src;
+        downloadBtn.classList.remove('hidden');
+    }
+
+    async function generateImage() {
+        var prompt = document.getElementById('prompt').value.trim();
+        var size = document.getElementById('size').value;
+        var quality = document.getElementById('quality').value;
+        if (!prompt) {
+            showMessage('请输入图片需求');
+            return;
+        }
+
+        showMessage('');
+        document.getElementById('revisedPrompt').classList.add('hidden');
+        document.getElementById('resultMeta').textContent = '生成中...';
+        setLoading(true);
+
+        try {
+            var res = await fetch('/api/image-generation/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: prompt, size: size, quality: quality }),
+            });
+            var data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || '生成失败');
+            }
+            var src = data.data_url || data.image_url;
+            if (!src) {
+                throw new Error('接口未返回图片');
+            }
+            showImage(src);
+            document.getElementById('resultMeta').textContent = data.model + ' · ' + data.size + ' · ' + data.quality;
+            if (data.revised_prompt) {
+                var revised = document.getElementById('revisedPrompt');
+                revised.textContent = '优化后的提示词：' + data.revised_prompt;
+                revised.classList.remove('hidden');
+            }
+        } catch (e) {
+            showMessage(e.message);
+            document.getElementById('resultMeta').textContent = latestImageSrc ? '保留上一次结果' : '等待生成';
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function clearPrompt() {
+        document.getElementById('prompt').value = '';
+        showMessage('');
+        document.getElementById('prompt').focus();
+    }
+</script>
+{% endblock %}

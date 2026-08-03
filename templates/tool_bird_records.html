@@ -1,0 +1,1008 @@
+{% extends "base.html" %}
+
+{% block title %}鸟种记录{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .main-content:has(.bird-grid) {
+        max-width: 1600px;
+    }
+
+    .bird-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 20px;
+    }
+
+    .bird-header h2 {
+        margin: 0 0 6px;
+        font-size: 1.35rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .bird-header p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+    }
+
+    .source-link {
+        color: #16a34a;
+        text-decoration: none;
+        font-size: 0.84rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .bird-grid {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .panel-title {
+        min-height: 50px;
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--border-color);
+        background: #f8fafc;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        font-size: 0.9rem;
+    }
+
+    .location-form,
+    .query-toolbar,
+    .detail-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-color);
+        flex-wrap: wrap;
+    }
+
+    .location-form input,
+    .query-toolbar input,
+    .detail-toolbar input {
+        height: 38px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.88rem;
+        color: var(--text-main);
+        background: #fff;
+    }
+
+    .location-form input {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .date-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-muted);
+        font-size: 0.84rem;
+    }
+
+    .icon-button {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: white;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+    }
+
+    .icon-button:hover {
+        background: #f1f5f9;
+        color: var(--text-main);
+    }
+
+    .location-list {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .location-hint {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.6;
+    }
+
+
+    .location-item {
+        border: 1px solid var(--border-color);
+        background: white;
+        border-radius: 8px;
+        padding: 10px 11px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--text-main);
+        min-height: 42px;
+    }
+
+    .location-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+    }
+
+    .main-stack {
+        display: grid;
+        gap: 18px;
+    }
+
+    .status-line {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        line-height: 1.6;
+    }
+
+    .message {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-color);
+        background: #f0fdf4;
+        color: #166534;
+        font-size: 0.86rem;
+        display: none;
+    }
+
+    .message.error {
+        background: #fef2f2;
+        color: #b91c1c;
+    }
+
+    .captcha-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.45);
+    }
+
+    .captcha-modal[hidden] {
+        display: none;
+    }
+
+    .captcha-dialog {
+        width: min(420px, 100%);
+        background: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
+        overflow: hidden;
+    }
+
+    .captcha-head,
+    .captcha-actions {
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .captcha-head {
+        border-bottom: 1px solid var(--border-color);
+        font-weight: 800;
+    }
+
+    .captcha-body {
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+    }
+
+    .captcha-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 112px;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .captcha-row input {
+        height: 40px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.95rem;
+    }
+
+    .captcha-image {
+        width: 112px;
+        height: 40px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        object-fit: cover;
+        cursor: pointer;
+        background: #f8fafc;
+    }
+
+    .captcha-hint {
+        color: var(--text-muted);
+        font-size: 0.84rem;
+        line-height: 1.6;
+    }
+
+    .captcha-error {
+        min-height: 18px;
+        color: #b91c1c;
+        font-size: 0.84rem;
+    }
+
+    .captcha-actions {
+        border-top: 1px solid var(--border-color);
+        justify-content: flex-end;
+    }
+
+    .bird-summary {
+        padding: 12px 16px;
+        background: #f0fdf4;
+        border-bottom: 1px solid var(--border-color);
+        color: #166534;
+        font-size: 0.9rem;
+        font-weight: 700;
+        line-height: 1.75;
+    }
+
+    .table-wrap {
+        overflow-x: auto;
+    }
+
+    .records-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: auto;
+        min-width: 1080px;
+    }
+
+    .records-table th,
+    .records-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border-color);
+        text-align: left;
+        font-size: 0.88rem;
+        vertical-align: middle;
+    }
+
+    .records-table th {
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        background: #fff;
+        white-space: nowrap;
+    }
+
+    .records-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .rank-row {
+        cursor: pointer;
+    }
+
+    .rank-row:hover td,
+    .rank-row.active td {
+        background: #f8fafc;
+    }
+
+    .rank-index {
+        color: var(--text-muted);
+        font-weight: 800;
+        width: 58px;
+    }
+
+    .location-cell,
+    .bird-cell,
+    .report-cell,
+    .user-cell {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .records-table .location-cell {
+        min-width: 260px;
+        white-space: normal;
+        word-break: break-all;
+        line-height: 1.55;
+    }
+
+    .custom-query-location {
+        border: 1px solid var(--border-color);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--text-muted);
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 0.86rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .custom-query-location:hover {
+        color: var(--primary-color);
+        border-color: var(--primary-color);
+        background: #eff6ff;
+    }
+
+    .btn-danger {
+        color: #b91c1c;
+        border-color: #fecaca;
+        background: #fff;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        color: #fff;
+        border-color: #dc2626;
+        background: #dc2626;
+    }
+
+    .count-cell {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .protection-level {
+        display: inline-block;
+        min-width: 42px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        text-align: center;
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .protection-level.level-1 {
+        color: #b91c1c;
+        background: #fee2e2;
+    }
+
+    .protection-level.level-2 {
+        color: #a16207;
+        background: #fef3c7;
+    }
+
+    .empty-state {
+        padding: 42px 18px;
+        text-align: center;
+        color: var(--text-muted);
+    }
+
+    .detail-toolbar input {
+        width: 220px;
+    }
+
+    .detail-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 920px) {
+        .bird-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 700px) {
+        .bird-header,
+        .query-toolbar,
+        .detail-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .date-control,
+        .date-control input,
+        #provinceInput,
+        #cityInput,
+        .detail-toolbar input,
+        .query-toolbar .btn {
+            width: 100%;
+        }
+
+        .date-control {
+            justify-content: space-between;
+        }
+
+        .captcha-row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bird-header">
+    <div>
+        <h2><i class="fas fa-dove" style="color:#16a34a;"></i> 鸟种记录</h2>
+        <p id="latestHint">正在读取上一次查询结果</p>
+    </div>
+    <a class="source-link" href="https://www.birdreport.cn/home/search/page.html" target="_blank" rel="noopener">
+        <i class="fas fa-up-right-from-square"></i> 数据来源
+    </a>
+</div>
+
+<div class="bird-grid">
+    <aside class="panel">
+        <div class="panel-title">
+            <span><i class="fas fa-location-dot"></i> 维护地点</span>
+            <span id="locationCount" class="status-line">0</span>
+        </div>
+        <div class="location-form">
+            <input id="locationInput" type="text" placeholder="新增地点">
+            <button class="icon-button" title="新增地点" onclick="addLocation()">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        <div class="location-hint">每次区域查询后，这里会自动反显本批次鸟种数量前 20 的地点。</div>
+        <div id="locationList" class="location-list">
+            <div class="empty-state">正在加载地点</div>
+        </div>
+    </aside>
+
+    <main class="main-stack">
+        <section class="panel">
+            <div class="panel-title">
+                <span><i class="fas fa-chart-column"></i> 最新批次 Top20</span>
+                <span id="batchText" class="status-line">-</span>
+            </div>
+            <div class="query-toolbar">
+                <div class="date-control">
+                    <span>省份</span>
+                    <input id="provinceInput" type="text" value="北京市">
+                </div>
+                <div class="date-control">
+                    <span>城市</span>
+                    <input id="cityInput" type="text" placeholder="全部">
+                </div>
+                <div class="date-control">
+                    <span>起始</span>
+                    <input id="startDate" type="date">
+                </div>
+                <div class="date-control">
+                    <span>结束</span>
+                    <input id="endDate" type="date">
+                </div>
+                <button class="btn btn-outline" onclick="queryBeijing()">
+                    <i class="fas fa-location-dot"></i> 北京
+                </button>
+                <button class="btn btn-outline" onclick="queryQingdao()">
+                    <i class="fas fa-map-location-dot"></i> 山东青岛
+                </button>
+                <button id="addCurrentLocationButton" class="btn btn-outline" onclick="addCurrentQueryLocation()">
+                    <i class="fas fa-plus"></i> 添加
+                </button>
+                <span id="customQueryLocations"></span>
+                <button id="queryButton" class="btn btn-primary" onclick="runBatchQuery()">
+                    <i class="fas fa-rotate-right"></i> 查询
+                </button>
+                <button id="exportButton" class="btn btn-outline" onclick="downloadLatestSource()" disabled>
+                    <i class="fas fa-file-excel"></i> 下载数据来源
+                </button>
+                <button id="clearDataButton" class="btn btn-danger" onclick="clearBirdRecordData()">
+                    <i class="fas fa-trash-can"></i> 清空历史数据
+                </button>
+            </div>
+            <div id="message" class="message"></div>
+            <div id="topContainer" class="table-wrap">
+                <div class="empty-state">暂无查询批次</div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-title">
+                <span id="detailTitle" class="detail-title"><i class="fas fa-list"></i> 明细</span>
+                <span id="detailSummary" class="status-line">请选择地点</span>
+            </div>
+            <div class="detail-toolbar">
+                <input id="keywordInput" type="search" placeholder="搜索鸟名" onkeydown="handleKeywordKey(event)">
+                <button class="btn btn-outline" onclick="loadSelectedDetails()">
+                    <i class="fas fa-magnifying-glass"></i> 搜索
+                </button>
+            </div>
+            <div id="detailContainer" class="table-wrap">
+                <div class="empty-state">点击 Top20 中的地点查看明细</div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div id="captchaModal" class="captcha-modal" hidden>
+    <div class="captcha-dialog">
+        <div class="captcha-head">
+            <span><i class="fas fa-shield-halved"></i> 输入观鸟数据中心验证码</span>
+            <button class="icon-button" title="关闭" onclick="closeCaptchaDialog()">
+                <i class="fas fa-xmark"></i>
+            </button>
+        </div>
+        <div class="captcha-body">
+            <div class="captcha-hint">观鸟数据中心要求完成访问频率校验。请输入右侧验证码，验证通过后会自动继续刚才的查询。</div>
+            <div class="captcha-row">
+                <input id="captchaInput" type="text" placeholder="验证码" maxlength="6" onkeydown="handleCaptchaKey(event)">
+                <img id="captchaImage" class="captcha-image" alt="验证码" title="点击刷新" onclick="refreshCaptcha()">
+            </div>
+            <div id="captchaError" class="captcha-error"></div>
+        </div>
+        <div class="captcha-actions">
+            <button class="btn btn-outline" onclick="refreshCaptcha()">
+                <i class="fas fa-rotate"></i> 刷新
+            </button>
+            <button id="captchaSubmitButton" class="btn btn-primary" onclick="submitCaptcha()">
+                <i class="fas fa-check"></i> 验证并继续
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let locations = [];
+    let customQueryLocations = [];
+    let topRows = [];
+    let activeSummaryId = null;
+    let shouldRetryQueryAfterCaptcha = false;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        document.getElementById('startDate').value = formatDate(yesterday);
+        document.getElementById('endDate').value = formatDate(today);
+        try {
+            customQueryLocations = JSON.parse(localStorage.getItem('birdQueryLocations') || '[]');
+        } catch (error) {
+            customQueryLocations = [];
+        }
+        renderCustomQueryLocations();
+        loadLocations();
+        loadLatestBatch();
+    });
+
+    document.getElementById('locationInput').addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addLocation();
+        }
+    });
+
+    function loadLocations() {
+        fetch('/api/bird-records/locations')
+            .then(parseJson)
+            .then(data => {
+                locations = data || [];
+                renderLocations();
+            })
+            .catch(error => {
+                document.getElementById('locationList').innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+            });
+    }
+
+    function renderLocations() {
+        const list = document.getElementById('locationList');
+        document.getElementById('locationCount').textContent = locations.length + ' 个';
+        if (!locations.length) {
+            list.innerHTML = '<div class="empty-state">暂无地点</div>';
+            return;
+        }
+        list.innerHTML = locations.map(location => `
+            <div class="location-item">
+                <span class="location-name" title="${escapeHtml(location.location_name)}">${escapeHtml(location.location_name)}</span>
+                <button class="icon-button" title="删除" onclick="deleteLocation(${Number(location.id)})">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    function addLocation() {
+        const input = document.getElementById('locationInput');
+        const locationName = input.value.trim();
+        if (!locationName) return;
+        fetch('/api/bird-records/locations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location_name: locationName })
+        })
+            .then(parseJson)
+            .then(data => {
+                input.value = '';
+                locations = data || [];
+                renderLocations();
+            })
+            .catch(error => showMessage(error.message, true));
+    }
+
+    function deleteLocation(id) {
+        fetch('/api/bird-records/locations/' + encodeURIComponent(id), { method: 'DELETE' })
+            .then(parseJson)
+            .then(() => loadLocations())
+            .catch(error => showMessage(error.message, true));
+    }
+
+    function renderCustomQueryLocations() {
+        const container = document.getElementById('customQueryLocations');
+        container.innerHTML = customQueryLocations.map(item => `
+            <button class="custom-query-location" onclick='runCustomQueryLocation(${JSON.stringify(item)})'>
+                <i class="fas fa-location-dot"></i> ${escapeHtml(item.name)}
+            </button>
+        `).join('');
+    }
+
+    function addCurrentQueryLocation() {
+        const province = document.getElementById('provinceInput').value.trim();
+        const city = document.getElementById('cityInput').value.trim();
+        if (!province) {
+            showMessage('请先输入省份', true);
+            return;
+        }
+        const item = { name: province + city, province, city };
+        customQueryLocations = customQueryLocations.filter(
+            saved => !(saved.province === province && saved.city === city)
+        );
+        customQueryLocations.push(item);
+        localStorage.setItem('birdQueryLocations', JSON.stringify(customQueryLocations));
+        renderCustomQueryLocations();
+        showMessage('已添加快捷查询：' + item.name, false);
+    }
+
+    function runCustomQueryLocation(item) {
+        document.getElementById('provinceInput').value = item.province;
+        document.getElementById('cityInput').value = item.city;
+        runBatchQuery();
+    }
+
+    function runBatchQuery() {
+        const button = document.getElementById('queryButton');
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        const province = document.getElementById('provinceInput').value.trim() || '北京市';
+        const city = document.getElementById('cityInput').value.trim();
+        const regionName = province + city;
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中';
+        showMessage('正在按 ' + regionName + ' 查询观鸟数据中心，并保存公开明细...', false);
+
+        fetch('/api/bird-records/query-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startDate, endDate, province, city })
+        })
+            .then(parseJson)
+            .then(data => {
+                const saved = data.savedLocations || 0;
+                const totalLocations = data.totalLocations || 0;
+                const recordTotal = data.recordTotal || 0;
+                const sourceSaved = data.sourceSaved || recordTotal;
+                const resultRegion = data.regionName || (data.province + (data.city || ''));
+                showMessage('批次 ' + data.batchNo + ' 已从 ' + resultRegion + ' 的 ' + recordTotal + ' 条公开明细中识别 ' + totalLocations + ' 个地点，已保存全量来源 ' + sourceSaved + ' 条，并展示前 ' + saved + ' 个地点。', false);
+                activeSummaryId = null;
+                clearDetails();
+                loadLocations();
+                loadLatestBatch();
+            })
+            .catch(error => {
+                if (error.payload && error.payload.captchaRequired) {
+                    shouldRetryQueryAfterCaptcha = true;
+                    showMessage(error.message, true);
+                    openCaptchaDialog();
+                    return;
+                }
+                showMessage(error.message, true);
+            })
+            .finally(() => {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-rotate-right"></i> 查询';
+            });
+    }
+
+    function queryQingdao() {
+        document.getElementById('provinceInput').value = '山东省';
+        document.getElementById('cityInput').value = '青岛市';
+        runBatchQuery();
+    }
+
+    function queryBeijing() {
+        document.getElementById('provinceInput').value = '北京市';
+        document.getElementById('cityInput').value = '';
+        runBatchQuery();
+    }
+
+    function openCaptchaDialog() {
+        document.getElementById('captchaModal').hidden = false;
+        document.getElementById('captchaInput').value = '';
+        document.getElementById('captchaError').textContent = '';
+        refreshCaptcha();
+        setTimeout(() => document.getElementById('captchaInput').focus(), 50);
+    }
+
+    function closeCaptchaDialog() {
+        document.getElementById('captchaModal').hidden = true;
+        shouldRetryQueryAfterCaptcha = false;
+    }
+
+    function refreshCaptcha() {
+        const image = document.getElementById('captchaImage');
+        image.src = '/api/bird-records/captcha?t=' + Date.now();
+    }
+
+    function submitCaptcha() {
+        const input = document.getElementById('captchaInput');
+        const button = document.getElementById('captchaSubmitButton');
+        const code = input.value.trim();
+        if (!code) {
+            document.getElementById('captchaError').textContent = '请输入验证码';
+            input.focus();
+            return;
+        }
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 验证中';
+        document.getElementById('captchaError').textContent = '';
+        fetch('/api/bird-records/captcha/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        })
+            .then(parseJson)
+            .then(() => {
+                document.getElementById('captchaModal').hidden = true;
+                showMessage('验证码已通过，正在继续查询...', false);
+                if (shouldRetryQueryAfterCaptcha) {
+                    shouldRetryQueryAfterCaptcha = false;
+                    runBatchQuery();
+                }
+            })
+            .catch(error => {
+                document.getElementById('captchaError').textContent = error.message;
+                refreshCaptcha();
+                input.value = '';
+                input.focus();
+            })
+            .finally(() => {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-check"></i> 验证并继续';
+            });
+    }
+
+    function handleCaptchaKey(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            submitCaptcha();
+        }
+    }
+
+    function loadLatestBatch() {
+        fetch('/api/bird-records/latest')
+            .then(parseJson)
+            .then(data => {
+                topRows = data.top20 || [];
+                const batchNo = data.batchNo || '';
+                document.getElementById('batchText').textContent = batchNo || '-';
+                document.getElementById('latestHint').textContent = batchNo ? '上一次查询批次：' + batchNo : '还没有保存过查询结果';
+                document.getElementById('exportButton').disabled = !batchNo;
+                renderTopRows();
+            })
+            .catch(error => {
+                document.getElementById('topContainer').innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+                document.getElementById('exportButton').disabled = true;
+            });
+    }
+
+    function downloadLatestSource() {
+        if (!topRows.length) return;
+        window.location.href = '/api/bird-records/export/latest';
+    }
+
+    function clearBirdRecordData() {
+        if (!confirm('确定清空所有之前查询的鸟种记录、明细和数据来源吗？此操作不可恢复。')) return;
+        const button = document.getElementById('clearDataButton');
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 清空中';
+        fetch('/api/bird-records/clear', { method: 'POST' })
+            .then(parseJson)
+            .then(() => {
+                topRows = [];
+                activeSummaryId = null;
+                document.getElementById('batchText').textContent = '-';
+                document.getElementById('latestHint').textContent = '还没有保存过查询结果';
+                document.getElementById('exportButton').disabled = true;
+                renderTopRows();
+                clearDetails();
+                loadLocations();
+                showMessage('鸟种查询记录已清空', false);
+            })
+            .catch(error => showMessage(error.message, true))
+            .finally(() => {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-trash-can"></i> 清空历史数据';
+            });
+    }
+
+    function renderTopRows() {
+        const container = document.getElementById('topContainer');
+        if (!topRows.length) {
+            container.innerHTML = '<div class="empty-state">暂无查询批次</div>';
+            return;
+        }
+        const rows = topRows.map((item, index) => `
+            <tr class="rank-row ${item.id === activeSummaryId ? 'active' : ''}" onclick="selectSummary(${Number(item.id)})">
+                <td class="rank-index">#${index + 1}</td>
+                <td class="location-cell" title="${escapeHtml(item.location_name)}">${escapeHtml(item.location_name)}</td>
+                <td class="count-cell">${escapeHtml(item.species_count)}</td>
+                <td class="count-cell">${escapeHtml(item.report_count)}</td>
+                <td class="count-cell">${escapeHtml(item.record_count)}</td>
+                <td class="count-cell">${escapeHtml(item.individual_count ?? '-')}</td>
+            </tr>
+        `).join('');
+        container.innerHTML = `
+            <table class="records-table">
+                <thead>
+                    <tr>
+                        <th style="width:58px;">#</th>
+                        <th>地点</th>
+                        <th class="count-cell" style="width:90px;">鸟种</th>
+                        <th class="count-cell" style="width:90px;">报告</th>
+                        <th class="count-cell" style="width:90px;">明细</th>
+                        <th class="count-cell" style="width:100px;">个体</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    function selectSummary(summaryId) {
+        activeSummaryId = summaryId;
+        renderTopRows();
+        document.getElementById('keywordInput').value = '';
+        loadSelectedDetails();
+    }
+
+    function loadSelectedDetails() {
+        if (!activeSummaryId) return;
+        const keyword = document.getElementById('keywordInput').value.trim();
+        const url = '/api/bird-records/summary/' + encodeURIComponent(activeSummaryId) + '/details?' + new URLSearchParams({ keyword }).toString();
+        document.getElementById('detailContainer').innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> 正在加载明细</div>';
+        fetch(url)
+            .then(parseJson)
+            .then(data => renderDetails(data.summary, data.details || [], data.birdNames || []))
+            .catch(error => {
+                document.getElementById('detailContainer').innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+            });
+    }
+
+    function renderDetails(summary, details, birdNames) {
+        document.getElementById('detailTitle').innerHTML = '<i class="fas fa-list"></i> ' + escapeHtml(summary.location_name);
+        const protectedSpecies = new Set(details.map(item => item.bird_name)).size;
+        document.getElementById('detailSummary').textContent = protectedSpecies + ' 种 · ' + details.length + ' 条保护明细';
+        const container = document.getElementById('detailContainer');
+        const birdSummary = birdNames.length
+            ? '<div class="bird-summary">' + escapeHtml(summary.start_date) + ' 至 ' + escapeHtml(summary.end_date) + ' ' + escapeHtml(summary.location_name) + ' 记录鸟种：' + escapeHtml(birdNames.join('、')) + '</div>'
+            : '';
+        if (!details.length) {
+            container.innerHTML = birdSummary + '<div class="empty-state">该地点没有Ⅰ级或Ⅱ级保护鸟类明细</div>';
+            return;
+        }
+        const rows = details.map(item => `
+            <tr>
+                <td class="report-cell" title="${escapeHtml(item.report_no)}">${escapeHtml(item.report_no)}</td>
+                <td class="location-cell" title="${escapeHtml(item.observation_location)}">${escapeHtml(item.observation_location)}</td>
+                <td class="bird-cell" title="${escapeHtml(item.bird_name)}">${escapeHtml(item.bird_name)}</td>
+                <td>${protectionBadge(item.protection_level)}</td>
+                <td class="count-cell">${escapeHtml(item.bird_count ?? '-')}</td>
+                <td class="user-cell" title="${escapeHtml(item.record_user)}">${escapeHtml(item.record_user)}</td>
+                <td>${escapeHtml(item.observation_time || '-')}</td>
+            </tr>
+        `).join('');
+        container.innerHTML = `
+            ${birdSummary}
+            <table class="records-table">
+                <thead>
+                    <tr>
+                        <th style="width:150px;">报告编号</th>
+                        <th>观测地点</th>
+                        <th style="width:150px;">鸟名</th>
+                        <th style="width:100px;">保护级别</th>
+                        <th class="count-cell" style="width:80px;">数量</th>
+                        <th style="width:150px;">记录用户</th>
+                        <th style="width:190px;">观测时间</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+}
+
+function protectionBadge(level) {
+    if (level === 'Ⅰ级') {
+        return '<span class="protection-level level-1">Ⅰ级</span>';
+    }
+    if (level === 'Ⅱ级') {
+        return '<span class="protection-level level-2">Ⅱ级</span>';
+    }
+    return '';
+}
+
+    function clearDetails() {
+        document.getElementById('detailTitle').innerHTML = '<i class="fas fa-list"></i> 明细';
+        document.getElementById('detailSummary').textContent = '请选择地点';
+        document.getElementById('detailContainer').innerHTML = '<div class="empty-state">点击 Top20 中的地点查看明细</div>';
+    }
+
+    function handleKeywordKey(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            loadSelectedDetails();
+        }
+    }
+
+    function showMessage(text, isError) {
+        const elem = document.getElementById('message');
+        elem.textContent = text;
+        elem.className = 'message' + (isError ? ' error' : '');
+        elem.style.display = text ? 'block' : 'none';
+    }
+
+    function parseJson(response) {
+        return response.json().then(data => {
+            if (!response.ok) {
+                const error = new Error(data.error || '请求失败');
+                error.payload = data;
+                throw error;
+            }
+            return data;
+        });
+    }
+
+    function formatDate(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return year + '-' + month + '-' + day;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+</script>
+{% endblock %}

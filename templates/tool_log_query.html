@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block title %}远程日志查询{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .tool-header {
+        margin-bottom: 25px;
+    }
+    .tool-header h2 {
+        margin: 0 0 6px;
+        font-size: 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .tool-header p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+
+    .grid-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 25px;
+    }
+
+    .input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .input-group label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+
+    .input-group input,
+    .input-group select {
+        width: 100%;
+        min-width: 0;
+        height: 56px;
+        padding: 0 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        font-size: 0.95rem;
+        font-family: inherit;
+        font-weight: 500;
+        color: var(--text-main);
+        transition: all 0.2s;
+        background: var(--card-bg);
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .input-group input:focus,
+    .input-group select:focus {
+        border-color: var(--primary-color);
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .input-group input::placeholder {
+        color: #94a3b8;
+        font-weight: 500;
+    }
+    .input-group input[type="number"] {
+        -moz-appearance: textfield;
+    }
+    .input-group input[type="number"]::-webkit-outer-spin-button,
+    .input-group input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    .input-group input[type="date"] {
+        appearance: none;
+        -webkit-appearance: none;
+    }
+    .input-group input[type="date"]::-webkit-date-and-time-value {
+        text-align: left;
+    }
+
+    .query-area {
+        background: var(--card-bg);
+        border-radius: 14px;
+        padding: 28px;
+        border: 1px solid var(--border-color);
+    }
+
+    .log-container {
+        margin-top: 30px;
+    }
+
+    .status-bar {
+        padding: 12px 20px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .status-info { background: #eff6ff; color: #1d4ed8; }
+    .status-success { background: #ecfdf5; color: #065f46; }
+
+    .log-box {
+        background: #f1f5f9;
+        color: #334155;
+        padding: 20px;
+        border-radius: 12px;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.7;
+        margin: 0;
+        overflow: auto;
+        max-height: 550px;
+        border-left: 4px solid #cbd5e1;
+        white-space: pre-wrap;
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        -webkit-touch-callout: default;
+        cursor: text;
+    }
+
+    .log-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+    }
+
+    .log-panel-tip {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    .t-tid { color: #dc2626; font-weight: bold; background: #fee2e2; padding: 1px 4px; border-radius: 4px; }
+    .t-date { color: #16a34a; font-weight: 500; }
+    .t-error { color: #ffffff; background: #ef4444; padding: 2px 5px; border-radius: 4px; }
+    .t-info { color: #2563eb; font-weight: bold; }
+    .t-kw { background: #fde047; color: #000; font-weight: bold; padding: 0 2px; }
+
+    @media (max-width: 768px) {
+        .grid-row { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tool-header">
+    <h2><i class="fas fa-terminal" style="color: var(--primary-color);"></i> 远程日志查询</h2>
+    <p>SSH远程连接服务器，支持关键词检索，也支持直接查看最新日志行</p>
+</div>
+
+<div class="query-area">
+    <div class="grid-row">
+        <div class="input-group">
+            <label>检索关键词</label>
+            <input type="text" id="keyword" placeholder="留空则返回最新日志">
+        </div>
+        <div class="input-group">
+            <label>日志日期</label>
+            <input type="date" id="date">
+        </div>
+        <div class="input-group">
+            <label>模块别名</label>
+            <select id="alias">
+                <option value="tax-pay-ext-bossMgr">tax-pay-ext-bossMgr (8180)</option>
+                <option value="tax-pay-ext-quartMgr">tax-pay-ext-quartMgr (8180)</option>
+                <option value="trans-rpcprovider">trans-rpcprovider (8480)</option>
+                <option value="trans-business" selected>trans-business (8280)</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>日志级别</label>
+            <select id="level">
+                <option value="ALL" selected>全部</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARN">WARN</option>
+                <option value="ERROR">ERROR</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>查询行数</label>
+            <input type="number" id="lineCount" min="1" max="5000" value="200" placeholder="默认 200">
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 12px;">
+        <button class="btn btn-primary" onclick="executeQuery()" style="flex: 1;">
+            <i class="fas fa-rocket"></i> 执行远程提取
+        </button>
+        <button class="btn btn-outline" onclick="viewLatestLog()">
+            <i class="fas fa-folder-open"></i> 查看最新保存
+        </button>
+    </div>
+
+    <div id="result-area" class="log-container" style="display: none;">
+        <div id="statusBox" class="status-bar"></div>
+        <div class="log-panel-header">
+            <span class="log-panel-tip">支持鼠标选中复制，也可一键复制全部内容</span>
+            <button type="button" class="btn btn-outline" id="copy-preview-btn" onclick="copyLogContent('preview', this)">
+                <i class="fas fa-copy"></i> 复制结果
+            </button>
+        </div>
+        <div id="preview" class="log-box"></div>
+    </div>
+</div>
+
+<div id="view-panel" class="log-container" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <button class="btn btn-outline" onclick="hideViewPanel()">
+            <i class="fas fa-arrow-left"></i> 返回查询
+        </button>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span id="log-title" style="font-weight: 600; color: var(--text-muted);"></span>
+            <button type="button" class="btn btn-outline" id="copy-full-log-btn" onclick="copyLogContent('full-log-content', this)">
+                <i class="fas fa-copy"></i> 复制全文
+            </button>
+        </div>
+    </div>
+    <div id="full-log-content" class="log-box" style="max-height: 75vh; background: #ffffff; border: 1px solid var(--border-color);"></div>
+</div>
+
+<script>
+    document.getElementById('date').valueAsDate = new Date();
+
+    function hideViewPanel() {
+        document.getElementById('view-panel').style.display = 'none';
+        document.querySelector('.query-area').style.display = 'block';
+    }
+
+    function setRawText(element, text) {
+        element.dataset.rawText = text || '';
+    }
+
+    function escapeRegExp(text) {
+        return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    async function copyLogContent(targetId, button) {
+        const target = document.getElementById(targetId);
+        const rawText = target?.dataset?.rawText || target?.innerText || '';
+        if (!rawText) {
+            return;
+        }
+
+        const originalHtml = button.innerHTML;
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(rawText);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = rawText;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+
+            button.innerHTML = '<i class="fas fa-check"></i> 已复制';
+            window.setTimeout(() => {
+                button.innerHTML = originalHtml;
+            }, 1500);
+        } catch (error) {
+            button.innerHTML = '<i class="fas fa-triangle-exclamation"></i> 复制失败';
+            window.setTimeout(() => {
+                button.innerHTML = originalHtml;
+            }, 1500);
+        }
+    }
+
+    async function viewLatestLog() {
+        const contentEl = document.getElementById('full-log-content');
+        const titleEl = document.getElementById('log-title');
+        document.querySelector('.query-area').style.display = 'none';
+        document.getElementById('view-panel').style.display = 'block';
+        contentEl.innerHTML = '<div style="text-align:center; padding:50px; color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i> 读取文件中...</div>';
+
+        try {
+            const res = await fetch('/get_latest_log');
+            const data = await res.json();
+            if (res.ok) {
+                titleEl.innerText = '\uD83D\uDCC1 ' + data.filename;
+                setRawText(contentEl, data.content);
+                contentEl.innerHTML = highlightLogs(data.content, "");
+            } else {
+                setRawText(contentEl, '');
+                contentEl.innerText = '\u274C 加载失败: ' + data.error;
+            }
+        } catch (e) {
+            setRawText(contentEl, '');
+            contentEl.innerText = '\u274C 连接后端异常';
+        }
+    }
+
+    async function executeQuery() {
+        const keyword = document.getElementById('keyword').value.trim();
+        const alias = document.getElementById('alias').value;
+        const date = document.getElementById('date').value;
+        const level = document.getElementById('level').value;
+        const lineCountInput = document.getElementById('lineCount').value;
+        const lineCount = Math.max(1, Math.min(parseInt(lineCountInput || '200', 10) || 200, 5000));
+        document.getElementById('lineCount').value = lineCount;
+
+        const resArea = document.getElementById('result-area');
+        const statusBox = document.getElementById('statusBox');
+        const preview = document.getElementById('preview');
+
+        resArea.style.display = 'block';
+        statusBox.className = 'status-bar status-info';
+        statusBox.innerHTML = '<i class="fas fa-sync fa-spin"></i> 正在检索 SSH 节点数据...';
+        preview.innerText = "";
+        setRawText(preview, '');
+        document.getElementById('view-panel').style.display = 'none';
+        document.querySelector('.query-area').style.display = 'block';
+
+        try {
+            const response = await fetch('/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keyword, date, alias, level, line_count: lineCount })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                statusBox.className = 'status-bar status-success';
+                const levelText = data.level === 'ALL' ? '全部级别' : data.level;
+                const modeText = keyword ? '匹配' : '返回';
+                statusBox.innerHTML = '<i class="fas fa-check-circle"></i> [' + alias + '][' + levelText + '] 提取成功，' + modeText + ' ' + data.count + ' 行';
+                setRawText(preview, data.preview);
+                preview.innerHTML = highlightLogs(data.preview, keyword);
+            } else {
+                statusBox.className = 'status-bar';
+                statusBox.style.background = '#fef2f2';
+                statusBox.style.color = '#dc2626';
+                statusBox.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + data.error;
+            }
+        } catch (e) {
+            statusBox.className = 'status-bar';
+            statusBox.style.background = '#fef2f2';
+            statusBox.style.color = '#dc2626';
+            statusBox.innerHTML = '<i class="fas fa-wifi"></i> 网络异常或后端未启动';
+        }
+    }
+
+    function highlightLogs(text, keyword) {
+        if (!text) return "No Data Found.";
+        let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        html = html.replace(/(\[TID:[a-zA-Z0-9\.]*\])/g, '<span class="t-tid">$1</span>');
+        html = html.replace(/(\[\d+_\d+\])/g, '<span class="t-tid">$1</span>');
+        html = html.replace(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[\.,]\d{3})/g, '<span class="t-date">$1</span>');
+        html = html.replace(/\b(ERROR|FAIL|Exception|Severe)\b/gi, '<span class="t-error">$1</span>');
+        html = html.replace(/\b(INFO|DEBUG)\b/gi, '<span class="t-info">$1</span>');
+
+        if (keyword) {
+            const reg = new RegExp('(' + escapeRegExp(keyword) + ')', 'gi');
+            html = html.replace(reg, '<span class="t-kw">$1</span>');
+        }
+        return html;
+    }
+</script>
+{% endblock %}

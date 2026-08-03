@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}资金调拨流程测试{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .flow-layout { max-width: 980px; margin: 0 auto; }
+    .flow-header { margin-bottom: 22px; }
+    .flow-header h2 { margin: 0 0 6px; font-size: 1.4rem; display: flex; align-items: center; gap: 10px; }
+    .flow-header p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+
+    .step-card {
+        background: var(--card-bg); border: 1px solid var(--border-color);
+        border-radius: 12px; overflow: hidden; margin-bottom: 18px;
+    }
+    .step-title {
+        padding: 14px 18px; background: #f8fafc; border-bottom: 1px solid var(--border-color);
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .step-title strong { display: flex; align-items: center; gap: 8px; }
+    .step-body { padding: 18px; }
+    .step-desc { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 14px; line-height: 1.6; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; color: var(--text-muted); font-size: 0.82rem; font-weight: 600; margin-bottom: 6px; }
+    .form-group input {
+        width: 100%; border: 1px solid var(--border-color); border-radius: 8px;
+        padding: 10px 12px; font-size: 0.9rem;
+    }
+    .result-box {
+        margin-top: 14px; background: #f8fafc; border: 1px solid var(--border-color);
+        border-radius: 8px; padding: 14px; color: var(--text-main);
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.82rem; line-height: 1.6; white-space: pre-wrap; overflow-x: auto;
+        max-height: 280px;
+    }
+    .status-pill {
+        border-radius: 999px; padding: 3px 9px; font-size: 0.74rem; font-weight: 700;
+        background: #e2e8f0; color: var(--text-muted);
+    }
+    .status-pill.ok { background: #dcfce7; color: #166534; }
+    .status-pill.error { background: #fee2e2; color: #b91c1c; }
+    .sql-box {
+        background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 14px;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.78rem;
+        overflow: auto; max-height: 220px; white-space: pre;
+    }
+    .inline-actions { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .inline-actions .form-group { flex: 1 1 360px; margin-bottom: 0; }
+    .batch-panel {
+        margin-top: 14px; padding: 14px; border: 1px dashed var(--border-color);
+        border-radius: 8px; background: #fbfdff;
+    }
+    .batch-grid {
+        display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;
+    }
+    .batch-grid .form-group { margin-bottom: 0; }
+    @media (max-width: 640px) {
+        .step-title { align-items: flex-start; flex-direction: column; }
+        .batch-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flow-layout">
+    <div class="flow-header">
+        <h2><i class="fas fa-money-bill-transfer" style="color:#dc2626;"></i> 资金调拨流程测试</h2>
+        <p>按步骤插入模拟银行流水，并携带 Cookie 调用 BossMgr 资金调拨处理接口</p>
+    </div>
+
+    <section class="step-card">
+        <div class="step-title">
+            <strong><i class="fas fa-database"></i> 第一步：新增一条流水</strong>
+            <span id="step1Status" class="status-pill">未执行</span>
+        </div>
+        <div class="step-body">
+            <p class="step-desc">执行配置中心里的 Oracle 连接，向 <code>PAYMENTDB.T_CEBANK_QUERY</code> 插入一条金额为 <code>100002</code> 的模拟流水。</p>
+            <button class="btn btn-primary" onclick="insertLedger()">
+                <i class="fas fa-plus"></i> 新增流水
+            </button>
+            <details style="margin-top:14px;">
+                <summary style="cursor:pointer;color:var(--text-muted);font-size:0.86rem;">查看执行 SQL</summary>
+                <div class="sql-box">INSERT INTO PAYMENTDB.T_CEBANK_QUERY (...字段略...)
+VALUES (
+    (SELECT NVL(MAX(CE_ID), 0) + 1 FROM PAYMENTDB.T_CEBANK_QUERY),
+    TO_CHAR(SYSTIMESTAMP, 'YYYYMMDDHH24MISSFF3') || TRUNC(DBMS_RANDOM.VALUE(100, 999)),
+    '人民币',
+    100002,
+    '贷',
+    ...,
+    'Mock银行',
+    '6213350207668213010',
+    '集团内部公司A',
+    '600000'
+);</div>
+            </details>
+            <div id="step1Result" class="result-box" style="display:none;"></div>
+        </div>
+    </section>
+
+    <section class="step-card">
+        <div class="step-title">
+            <strong><i class="fas fa-paper-plane"></i> 第二步：调用调拨接口</strong>
+            <span id="step2Status" class="status-pill">未执行</span>
+        </div>
+        <div class="step-body">
+            <p class="step-desc">输入登录态 Cookie（或点击下方按钮自动获取），POST 调用配置中心中的资金调拨接口地址。</p>
+            <div class="form-group">
+                <label>Cookie</label>
+                <div style="display:flex;gap:8px;">
+                    <input id="cookieInput" type="text" value="JSESSIONID=011FAEA3AA5B72163762D72CEBB48636" placeholder="JSESSIONID=..." style="flex:1;">
+                    <button class="btn btn-outline" onclick="autoLogin()" title="自动登录获取 Cookie" style="white-space:nowrap;">
+                        <i class="fas fa-key"></i> 获取Token
+                    </button>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="callCharge()">
+                <i class="fas fa-play"></i> 调用接口
+            </button>
+            <div class="batch-panel">
+                <p class="step-desc">短时间批量调用同一个调拨接口，用于观察是否出现重复调拨。建议先新增一条流水，再批量调用，最后查看结果。</p>
+                <div class="batch-grid">
+                    <div class="form-group">
+                        <label>调用次数</label>
+                        <input id="batchCountInput" type="number" min="1" max="200" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label>并发数</label>
+                        <input id="batchConcurrencyInput" type="number" min="1" max="50" value="5">
+                    </div>
+                    <button class="btn btn-outline" onclick="batchCallCharge()">
+                        <i class="fas fa-bolt"></i> 批量调用
+                    </button>
+                </div>
+            </div>
+            <div id="step2Result" class="result-box" style="display:none;"></div>
+        </div>
+    </section>
+
+    <section class="step-card">
+        <div class="step-title">
+            <strong><i class="fas fa-magnifying-glass-chart"></i> 第三步：查看结果</strong>
+            <span id="step3Status" class="status-pill">未执行</span>
+        </div>
+        <div class="step-body">
+            <p class="step-desc">使用第一步返回的 <code>DATE_NET_SERIAL</code> 查询调拨订单、银行订单、审核记录和账户明细流水；多条可用英文逗号分隔。</p>
+            <div class="inline-actions">
+                <div class="form-group">
+                    <label>DATE_NET_SERIAL</label>
+                    <input id="dateNetSerialInput" type="text" placeholder="新增流水后自动填入；多条用英文逗号分隔">
+                </div>
+                <button class="btn btn-primary" onclick="queryResults()">
+                    <i class="fas fa-search"></i> 查看结果
+                </button>
+            </div>
+            <details style="margin-top:14px;">
+                <summary style="cursor:pointer;color:var(--text-muted);font-size:0.86rem;">查看执行 SQL</summary>
+                <div class="sql-box">SELECT t.ORDER_NO, t.CE_ID, t.ORDER_STATUS, t.RECHARGE_STATUS, t.TRANSFER_TYPE, t.AMOUNT,
+       b.ID AS BANK_ORDER_PK, b.ORDER_ID, b.TRANS_ORDER_ID, b.BANK_ORDER_ID, b.ACC_TYPE,
+       b.STATE AS BANK_ORDER_STATE, b.AMT, b.TRANS_CODE, b.TRANS_MSG, b.QUERY_CODE, b.QUERY_MSG,
+       b.CREATE_TIME, b.UPDATE_TIME
+FROM T_TRANSFER_ORDER t
+LEFT JOIN T_BANK_ORDER b ON b.ORDER_ID = t.ORDER_NO
+WHERE t.CE_ID IN (SELECT CE_ID FROM T_CEBANK_QUERY WHERE DATE_NET_SERIAL IN (':date_net_serial1', ':date_net_serial2'));
+
+SELECT ID, ORDER_ID, DATE_NET_SERIAL, ACCOUNT_ID, ACC_TYPE, CHANGE_AMT, FEE, STATE, AUDIT_STATE,
+       MEMO, CREATE_TIME, UPDATE_TIME
+FROM T_ACC_REVIEW_RECORD
+WHERE DATE_NET_SERIAL IN (SELECT DATE_NET_SERIAL FROM T_CEBANK_QUERY WHERE DATE_NET_SERIAL IN (':date_net_serial1', ':date_net_serial2'));
+
+SELECT *
+FROM T_ACC_DETAIL_TRANS
+WHERE ORDER_ID IN (SELECT ORDER_ID FROM T_ACC_REVIEW_RECORD WHERE DATE_NET_SERIAL IN (':date_net_serial1', ':date_net_serial2'));</div>
+            </details>
+            <div id="step3Result" class="result-box" style="display:none;"></div>
+        </div>
+    </section>
+</div>
+
+<script>
+    let lastDateNetSerial = '';
+
+    async function insertLedger() {
+        setStatus('step1Status', '执行中', '');
+        setResult('step1Result', '正在连接 Oracle 并插入流水...');
+        try {
+            const res = await fetch('/api/fund-transfer-test/insert-ledger', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '新增流水失败');
+            lastDateNetSerial = data.date_net_serial || (data.latest && data.latest.date_net_serial) || '';
+            if (lastDateNetSerial) {
+                document.getElementById('dateNetSerialInput').value = lastDateNetSerial;
+            }
+            setStatus('step1Status', '成功', 'ok');
+            setResult('step1Result', JSON.stringify(data, null, 2));
+        } catch (error) {
+            setStatus('step1Status', '失败', 'error');
+            setResult('step1Result', error.message);
+        }
+    }
+
+    async function autoLogin() {
+        setStatus('step2Status', '登录中', '');
+        setResult('step2Result', '正在自动登录 BossMgr 获取 Cookie...');
+        try {
+            const res = await fetch('/api/fund-transfer-test/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: 'admin@fws.com',
+                    password: '1234Qwer!'
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '登录失败');
+            if (data.cookie_string) {
+                document.getElementById('cookieInput').value = data.cookie_string;
+            }
+            setStatus('step2Status', '已获取Token', 'ok');
+            setResult('step2Result', JSON.stringify(data, null, 2));
+        } catch (error) {
+            setStatus('step2Status', '登录失败', 'error');
+            setResult('step2Result', error.message);
+        }
+    }
+
+    async function callCharge() {
+        const cookie = document.getElementById('cookieInput').value.trim();
+        if (!cookie) {
+            alert('请输入 Cookie');
+            return;
+        }
+        setStatus('step2Status', '执行中', '');
+        setResult('step2Result', '正在调用资金调拨接口...');
+        try {
+            const res = await fetch('/api/fund-transfer-test/charge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cookie })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || ('接口返回 HTTP ' + data.status_code));
+            setStatus('step2Status', '成功', 'ok');
+            setResult('step2Result', JSON.stringify(data, null, 2));
+        } catch (error) {
+            setStatus('step2Status', '失败', 'error');
+            setResult('step2Result', error.message);
+        }
+    }
+
+    async function batchCallCharge() {
+        const cookie = document.getElementById('cookieInput').value.trim();
+        if (!cookie) {
+            alert('请输入 Cookie');
+            return;
+        }
+
+        const count = normalizeNumber('batchCountInput', 10, 1, 200);
+        const concurrency = normalizeNumber('batchConcurrencyInput', 5, 1, Math.min(50, count));
+        const startedAt = Date.now();
+        const results = [];
+        let nextIndex = 0;
+        let finished = 0;
+
+        setStatus('step2Status', '批量执行中', '');
+        setResult('step2Result', `准备批量调用：总次数 ${count}，并发 ${concurrency}...\n`);
+
+        async function runOne(index) {
+            const itemStartedAt = Date.now();
+            try {
+                const res = await fetch('/api/fund-transfer-test/charge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookie })
+                });
+                const data = await res.json();
+                return {
+                    index: index + 1,
+                    ok: res.ok,
+                    http_status: res.status,
+                    business_status: data.status || '',
+                    target_status_code: data.status_code || '',
+                    duration_ms: Date.now() - itemStartedAt,
+                    preview: data.error || data.body_preview || ''
+                };
+            } catch (error) {
+                return {
+                    index: index + 1,
+                    ok: false,
+                    http_status: 0,
+                    duration_ms: Date.now() - itemStartedAt,
+                    preview: error.message
+                };
+            }
+        }
+
+        async function worker() {
+            while (nextIndex < count) {
+                const index = nextIndex;
+                nextIndex += 1;
+                const result = await runOne(index);
+                results.push(result);
+                finished += 1;
+                renderBatchProgress(results, finished, count, startedAt);
+            }
+        }
+
+        await Promise.all(Array.from({ length: concurrency }, worker));
+        const successCount = results.filter(item => item.ok).length;
+        setStatus('step2Status', successCount === count ? '批量成功' : '批量完成', successCount ? 'ok' : 'error');
+        renderBatchProgress(results, finished, count, startedAt, true);
+    }
+
+    function normalizeNumber(id, fallback, min, max) {
+        const el = document.getElementById(id);
+        let value = parseInt(el.value, 10);
+        if (!Number.isFinite(value)) value = fallback;
+        value = Math.min(Math.max(value, min), max);
+        el.value = value;
+        return value;
+    }
+
+    function renderBatchProgress(results, finished, total, startedAt, done) {
+        const ordered = [...results].sort((a, b) => a.index - b.index);
+        const successCount = ordered.filter(item => item.ok).length;
+        const failedCount = ordered.length - successCount;
+        const elapsed = Date.now() - startedAt;
+        const lines = [
+            `进度：${finished}/${total}`,
+            `成功：${successCount}，失败：${failedCount}，耗时：${elapsed}ms`,
+            done ? '状态：批量调用完成，建议继续执行第三步查看是否重复生成调拨结果。' : '状态：执行中...',
+            '',
+            ...ordered.map(item => {
+                const preview = String(item.preview || '').replace(/\s+/g, ' ').slice(0, 180);
+                return `#${item.index} ${item.ok ? 'OK' : 'FAIL'} http=${item.http_status} target=${item.target_status_code || '-'} ${item.duration_ms}ms ${preview}`;
+            })
+        ];
+        setResult('step2Result', lines.join('\n'));
+    }
+
+    async function queryResults() {
+        const dateNetSerial = document.getElementById('dateNetSerialInput').value.trim() || lastDateNetSerial;
+        if (!dateNetSerial) {
+            alert('请先新增流水，或输入 DATE_NET_SERIAL，多个值用英文逗号分隔');
+            return;
+        }
+        setStatus('step3Status', '执行中', '');
+        setResult('step3Result', '正在查询流程结果...');
+        try {
+            const res = await fetch('/api/fund-transfer-test/results', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date_net_serial: dateNetSerial })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '查看结果失败');
+            setStatus('step3Status', '成功', 'ok');
+            setResult('step3Result', JSON.stringify(data, null, 2));
+        } catch (error) {
+            setStatus('step3Status', '失败', 'error');
+            setResult('step3Result', error.message);
+        }
+    }
+
+    function setStatus(id, text, type) {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = 'status-pill' + (type ? ' ' + type : '');
+    }
+
+    function setResult(id, text) {
+        const el = document.getElementById(id);
+        el.style.display = 'block';
+        el.textContent = text;
+    }
+</script>
+{% endblock %}

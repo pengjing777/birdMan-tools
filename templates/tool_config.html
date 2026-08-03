@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+
+{% block title %}配置管理{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .config-layout { max-width: 900px; margin: 0 auto; padding: 10px 0 40px; }
+    .config-header { text-align: center; padding: 10px 0 20px; }
+    .config-header h1 { font-size: 1.5rem; margin: 0; color: var(--text-main); }
+    .config-header h1 i { color: #8b5cf6; }
+    .config-header p { color: var(--text-muted); margin: 6px 0 0; font-size: 0.85rem; }
+
+    .config-section {
+        background: var(--card-bg); border-radius: 12px;
+        border: 1px solid var(--border-color); margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .config-section-title {
+        font-size: 0.9rem; font-weight: 600; padding: 14px 20px;
+        border-bottom: 1px solid var(--border-color);
+        background: #f8fafc; display: flex; align-items: center; gap: 8px;
+    }
+    .config-section-body { padding: 16px 20px; }
+
+    .form-row {
+        display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start;
+    }
+    .form-row:last-child { margin-bottom: 0; }
+    .form-group { flex: 1; min-width: 0; }
+    .form-group label {
+        display: block; font-size: 0.78rem; color: var(--text-muted);
+        margin-bottom: 4px; font-weight: 500;
+    }
+    .form-group input, .form-group textarea, .form-group select {
+        width: 100%; padding: 8px 10px; border-radius: 6px;
+        border: 1px solid var(--border-color); font-size: 0.85rem;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        background: var(--card-bg); color: var(--text-main);
+        transition: border-color 0.15s; box-sizing: border-box;
+    }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+        outline: none; border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    .form-group input[type="password"] { letter-spacing: 2px; }
+    .form-help {
+        margin-top: 4px; font-size: 0.72rem; line-height: 1.4;
+        color: var(--text-muted);
+    }
+
+    .log-mapping-item {
+        display: flex; gap: 8px; align-items: center; margin-bottom: 8px;
+    }
+    .log-mapping-item input { flex: 1; }
+    .log-mapping-item .btn-remove {
+        width: 30px; height: 30px; flex-shrink: 0; border-radius: 6px;
+        border: 1px solid var(--border-color); background: none;
+        cursor: pointer; color: var(--error-color); font-size: 1rem;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .log-mapping-item .btn-remove:hover { background: #fef2f2; }
+
+    .assistant-switch-row {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 4px 0 14px; margin-bottom: 12px; border-bottom: 1px solid var(--border-color);
+    }
+    .assistant-switch-title { font-size: 0.92rem; font-weight: 600; color: var(--text-main); }
+    .assistant-switch-note { margin-top: 3px; font-size: 0.78rem; color: var(--text-muted); }
+    .switch {
+        position: relative; width: 46px; height: 26px; flex: 0 0 auto;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch-slider {
+        position: absolute; inset: 0; cursor: pointer; border-radius: 999px;
+        background: #cbd5e1; transition: all 0.2s;
+    }
+    .switch-slider:before {
+        content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px;
+        border-radius: 50%; background: #fff; transition: all 0.2s;
+        box-shadow: 0 1px 4px rgba(15,23,42,0.25);
+    }
+    .switch input:checked + .switch-slider { background: var(--success-color); }
+    .switch input:checked + .switch-slider:before { transform: translateX(20px); }
+    .assistant-menu-list { display: grid; gap: 8px; }
+    .assistant-menu-item {
+        display: grid; grid-template-columns: 28px minmax(120px, 1fr) 150px minmax(150px, 1.4fr) 32px;
+        gap: 8px; align-items: center; padding: 10px;
+        border: 1px solid var(--border-color); border-radius: 8px; background: #fff;
+    }
+    .assistant-menu-item input, .assistant-menu-item select {
+        width: 100%; padding: 7px 8px; border: 1px solid var(--border-color); border-radius: 6px;
+        font-size: 0.82rem; color: var(--text-main); background: #fff; min-width: 0;
+    }
+    .assistant-menu-item input[type="checkbox"] { width: 16px; height: 16px; justify-self: center; }
+    .assistant-menu-item .btn-remove {
+        width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border-color);
+        background: #fff; color: var(--error-color); cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .assistant-menu-item .btn-remove:hover { background: #fef2f2; }
+
+    .tool-order-list { display: grid; gap: 8px; }
+    .tool-order-item {
+        display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center;
+        padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px;
+        background: #fff;
+    }
+    .tool-order-icon {
+        width: 32px; height: 32px; border-radius: 8px; color: #fff;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .tool-order-name { font-size: 0.9rem; font-weight: 600; color: var(--text-main); }
+    .tool-order-id { font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; }
+    .tool-order-actions { display: inline-flex; gap: 6px; }
+    .tool-order-actions button {
+        width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border-color);
+        background: #fff; color: var(--text-muted); cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .tool-order-actions button:hover:not(:disabled) { background: #f1f5f9; color: var(--text-main); }
+    .tool-order-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn {
+        padding: 8px 16px; border-radius: 6px; border: none; font-size: 0.85rem;
+        font-weight: 600; cursor: pointer; transition: all 0.15s;
+        display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-primary { background: var(--primary-color); color: white; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); }
+    .btn-outline:hover { background: #f1f5f9; }
+    .btn-success { background: var(--success-color); color: white; }
+    .btn-success:hover { background: #059669; }
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+
+    .action-bar {
+        display: flex; gap: 12px; justify-content: center; padding: 10px 0;
+    }
+
+    .toast {
+        position: fixed; top: 80px; right: 30px; padding: 12px 20px;
+        border-radius: 8px; color: white; font-size: 0.88rem; font-weight: 500;
+        z-index: 999; animation: fadeIn 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .toast.success { background: var(--success-color); }
+    .toast.error { background: var(--error-color); }
+
+    @media (max-width: 640px) {
+        .form-row { flex-direction: column; }
+        .assistant-switch-row { align-items: flex-start; }
+        .assistant-menu-item { grid-template-columns: 28px 1fr 32px; }
+        .assistant-menu-item select, .assistant-menu-item [data-field="target"] { grid-column: 2 / 4; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="config-layout">
+    <div class="config-header">
+        <h1><i class="fas fa-cogs"></i> 配置管理</h1>
+        <p>修改应用配置，部分配置项修改后需重启应用生效</p>
+    </div>
+
+    <form id="config-form" autocomplete="off">
+        <!-- 主页图标顺序 -->
+        <div class="config-section">
+            <div class="config-section-title"><i class="fas fa-grip-vertical"></i> 主页图标顺序</div>
+            <div class="config-section-body">
+                <div id="home-tool-order-list" class="tool-order-list"></div>
+            </div>
+        </div>
+
+        <!-- 数据库与缓存 -->
+        <div class="config-section">
+            <div class="config-section-title"><i class="fas fa-database"></i> 数据库与缓存</div>
+            <div class="config-section-body">
+                <div class="assistant-switch-row">
+                    <div>
+                        <div class="assistant-switch-title">启用数据库</div>
+                        <div class="assistant-switch-note">关闭后保护动物名录和查询结果使用内存缓存，缓存有效期为 5 分钟；重启后名录会自动重新预热。</div>
+                    </div>
+                    <label class="switch" title="启用数据库">
+                        <input type="checkbox" id="f_db_enabled">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>数据库地址</label><input type="text" id="f_db_host" placeholder="localhost"></div>
+                    <div class="form-group"><label>端口</label><input type="number" id="f_db_port" placeholder="3306"></div>
+                    <div class="form-group"><label>数据库名</label><input type="text" id="f_db_database" placeholder="sby"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>用户名</label><input type="text" id="f_db_user" placeholder="root"></div>
+                    <div class="form-group"><label>密码</label><input type="password" id="f_db_password" placeholder="留空表示不修改"></div>
+                    <div class="form-group"><label>连接超时（秒）</label><input type="number" id="f_db_connect_timeout" min="1" placeholder="3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 桌面 Emoji 助手 -->
+        <div class="config-section">
+            <div class="config-section-title"><i class="fas fa-face-smile"></i> 桌面 Emoji 助手</div>
+            <div class="config-section-body" id="desktop-assistant-config">
+                <div class="assistant-switch-row">
+                    <div>
+                        <div class="assistant-switch-title">显示桌面助手</div>
+                        <div class="assistant-switch-note">保存后会自动应用，无需重启主窗口</div>
+                    </div>
+                    <label class="switch" title="开关桌面助手">
+                        <input type="checkbox" id="f_assistant_enabled">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:0.35;">
+                        <label>助手图标</label>
+                        <input type="text" id="f_assistant_icon_path" placeholder="assets/assistant_kingfisher_transparent.png">
+                        <div class="form-help">支持相对路径或绝对路径，留空时回退到 Emoji。</div>
+                    </div>
+                    <div class="form-group" style="flex:0.25;">
+                        <label>助手 Emoji</label>
+                        <input type="text" id="f_assistant_emoji" maxlength="8" placeholder="🤪">
+                        <div class="form-help">当图标不存在或加载失败时使用。</div>
+                    </div>
+                    <div class="form-group">
+                        <label>右键功能菜单</label>
+                        <div id="assistant-menu-list" class="assistant-menu-list"></div>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="addAssistantMenuItem()" style="margin-top:8px;">
+                            <i class="fas fa-plus"></i> 添加菜单
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <button type="button" class="btn btn-primary" onclick="saveConfig()">
+                <i class="fas fa-save"></i> 保存配置
+            </button>
+            <button type="button" class="btn btn-outline" onclick="loadConfig()">
+                <i class="fas fa-redo"></i> 刷新
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    var assistantMenuCount = 0;
+    var allHomeTools = {{ home_tools | tojson }};
+    var homeToolOrder = [];
+    var assistantActionLabels = {
+        open_toolbox: '打开工具箱',
+        open_tool: '打开指定工具',
+        open_url: '打开 URL',
+        copy_text: '复制文本',
+        run_command: '执行命令',
+        git_branches: 'Git 分支操作',
+        toggle_network: '切换网络',
+        disable_assistant: '关闭助手'
+    };
+
+    document.addEventListener('DOMContentLoaded', loadConfig);
+
+    async function loadConfig() {
+        try {
+            var cfgRes = await fetch('/api/config');
+            var cfg = await cfgRes.json();
+            applyConfig(cfg);
+        } catch (e) {
+            showToast('加载配置失败: ' + e.message, 'error');
+        }
+    }
+
+    function applyConfig(cfg) {
+        renderHomeToolOrder(cfg.home_tool_order || []);
+        var db = cfg.db || {};
+        document.getElementById('f_db_enabled').checked = db.enabled !== false;
+        document.getElementById('f_db_host').value = db.host || '';
+        document.getElementById('f_db_port').value = db.port || 3306;
+        document.getElementById('f_db_database').value = db.database || '';
+        document.getElementById('f_db_user').value = db.user || '';
+        document.getElementById('f_db_password').value = db.password || '';
+        document.getElementById('f_db_connect_timeout').value = db.connect_timeout || 3;
+        // 桌面 Emoji 助手
+        var assistant = cfg.desktop_assistant || {};
+        document.getElementById('f_assistant_enabled').checked = assistant.enabled !== false;
+        document.getElementById('f_assistant_icon_path').value = assistant.icon_path || 'assets/assistant_kingfisher_transparent.png';
+        document.getElementById('f_assistant_emoji').value = assistant.emoji || '🤪';
+        renderAssistantMenuItems(assistant.menu_items || []);
+
+    }
+
+    function normalizeHomeToolOrder(order) {
+        var known = {};
+        allHomeTools.forEach(function(tool) { known[tool.id] = tool; });
+        var result = [];
+        (order || []).forEach(function(id) {
+            if (known[id] && result.indexOf(id) === -1) result.push(id);
+        });
+        allHomeTools.forEach(function(tool) {
+            if (result.indexOf(tool.id) === -1) result.push(tool.id);
+        });
+        return result;
+    }
+
+    function renderHomeToolOrder(order) {
+        homeToolOrder = normalizeHomeToolOrder(order);
+        var toolMap = {};
+        allHomeTools.forEach(function(tool) { toolMap[tool.id] = tool; });
+        var container = document.getElementById('home-tool-order-list');
+        container.innerHTML = homeToolOrder.map(function(toolId, index) {
+            var tool = toolMap[toolId];
+            return '<div class="tool-order-item" data-tool-id="' + escapeHtml(tool.id) + '">' +
+                '<div class="tool-order-icon" style="background:' + escapeHtml(tool.color) + ';"><i class="fas ' + escapeHtml(tool.icon) + '"></i></div>' +
+                '<div><div class="tool-order-name">' + escapeHtml(tool.name) + '</div><div class="tool-order-id">' + escapeHtml(tool.id) + '</div></div>' +
+                '<div class="tool-order-actions">' +
+                    '<button type="button" title="上移" onclick="moveHomeTool(' + index + ', -1)" ' + (index === 0 ? 'disabled' : '') + '><i class="fas fa-arrow-up"></i></button>' +
+                    '<button type="button" title="下移" onclick="moveHomeTool(' + index + ', 1)" ' + (index === homeToolOrder.length - 1 ? 'disabled' : '') + '><i class="fas fa-arrow-down"></i></button>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    function moveHomeTool(index, delta) {
+        var target = index + delta;
+        if (target < 0 || target >= homeToolOrder.length) return;
+        var current = homeToolOrder[index];
+        homeToolOrder[index] = homeToolOrder[target];
+        homeToolOrder[target] = current;
+        renderHomeToolOrder(homeToolOrder);
+    }
+
+    function renderAssistantMenuItems(items) {
+        var container = document.getElementById('assistant-menu-list');
+        container.innerHTML = '';
+        assistantMenuCount = 0;
+        (items || []).forEach(function(item) {
+            addAssistantMenuItem(item.label, item.action, item.target, item.enabled !== false);
+        });
+        if (assistantMenuCount === 0) {
+            addAssistantMenuItem('查看日志', 'open_tool', 'log-query', true);
+            addAssistantMenuItem('切换网络', 'toggle_network', '', true);
+            addAssistantMenuItem('Git操作', 'git_branches', '', true);
+            addAssistantMenuItem('配置管理', 'open_tool', 'config-manager', true);
+            addAssistantMenuItem('鸟种记录', 'open_tool', 'bird-records', true);
+        }
+    }
+
+    function addAssistantMenuItem(label, action, target, enabled) {
+        var container = document.getElementById('assistant-menu-list');
+        var idx = assistantMenuCount++;
+        var div = document.createElement('div');
+        div.className = 'assistant-menu-item';
+        div.id = 'assistant-menu-' + idx;
+        div.innerHTML =
+            '<input type="checkbox" data-field="enabled" title="启用" ' + (enabled === false ? '' : 'checked') + '>' +
+            '<input type="text" data-field="label" placeholder="菜单名称" value="' + escapeHtml(label || '') + '">' +
+            '<select data-field="action">' + buildAssistantActionOptions(action || 'open_tool') + '</select>' +
+            '<input type="text" data-field="target" placeholder="工具ID / URL / 文本 / 命令" value="' + escapeHtml(target || '') + '">' +
+            '<button type="button" class="btn-remove" title="删除" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>';
+        container.appendChild(div);
+    }
+
+    function buildAssistantActionOptions(selected) {
+        return Object.keys(assistantActionLabels).map(function(action) {
+            return '<option value="' + escapeHtml(action) + '" ' + (action === selected ? 'selected' : '') + '>' +
+                escapeHtml(assistantActionLabels[action]) + '</option>';
+        }).join('');
+    }
+
+    function collectAssistantConfig() {
+        var menuItems = [];
+        document.querySelectorAll('.assistant-menu-item').forEach(function(item) {
+            var label = item.querySelector('[data-field="label"]').value.trim();
+            var action = item.querySelector('[data-field="action"]').value.trim();
+            var target = item.querySelector('[data-field="target"]').value.trim();
+            var enabled = item.querySelector('[data-field="enabled"]').checked;
+            if (label && action) {
+                menuItems.push({
+                    label: label,
+                    action: action,
+                    target: target,
+                    enabled: enabled
+                });
+            }
+        });
+        return {
+            enabled: document.getElementById('f_assistant_enabled').checked,
+            icon_path: document.getElementById('f_assistant_icon_path').value.trim(),
+            emoji: document.getElementById('f_assistant_emoji').value.trim() || '🤪',
+            menu_items: menuItems
+        };
+    }
+
+    async function saveConfig() {
+        var dbPassword = document.getElementById('f_db_password').value;
+        var config = {
+            home_tool_order: homeToolOrder.slice(),
+            db: {
+                enabled: document.getElementById('f_db_enabled').checked,
+                host: document.getElementById('f_db_host').value.trim(),
+                port: Number(document.getElementById('f_db_port').value || 3306),
+                database: document.getElementById('f_db_database').value.trim(),
+                user: document.getElementById('f_db_user').value.trim(),
+                password: dbPassword,
+                connect_timeout: Number(document.getElementById('f_db_connect_timeout').value || 3)
+            },
+            desktop_assistant: collectAssistantConfig(),
+        };
+
+        try {
+            var res = await fetch('/api/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config),
+            });
+            var data = await res.json();
+            if (res.ok) {
+                var msg = '配置已保存成功！';
+                showToast(msg, 'success');
+            } else {
+                showToast('保存失败: ' + (data.error || '未知错误'), 'error');
+            }
+        } catch (e) {
+            showToast('保存失败: ' + e.message, 'error');
+        }
+    }
+
+    function showToast(msg, type) {
+        var existing = document.querySelector('.toast');
+        if (existing) existing.remove();
+        var toast = document.createElement('div');
+        toast.className = 'toast ' + type;
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 4000);
+    }
+
+    function escapeHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+</script>
+{% endblock %}

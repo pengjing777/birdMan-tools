@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block title %}服务商 Vue 前端{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .vue-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 18px;
+        margin-bottom: 22px;
+    }
+
+    .vue-title h2 {
+        margin: 0 0 6px;
+        font-size: 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .vue-title p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        word-break: break-all;
+    }
+
+    .toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .layout {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 18px;
+    }
+
+    .panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .panel-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-color);
+        background: #f8fafc;
+        font-weight: 700;
+    }
+
+    .panel-body {
+        padding: 16px;
+    }
+
+    .kv {
+        display: grid;
+        gap: 14px;
+    }
+
+    .kv label {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+    }
+
+    .kv code {
+        display: block;
+        padding: 10px 11px;
+        background: #f1f5f9;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: #334155;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .status-pill.running {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .status-pill.stopped {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .log-box {
+        min-height: 520px;
+        max-height: calc(100vh - 245px);
+        overflow: auto;
+        padding: 14px 16px;
+        background: #0f172a;
+        color: #dbeafe;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.8rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+    }
+
+    .log-empty {
+        color: #94a3b8;
+    }
+
+    .btn-danger {
+        background: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid #fecaca;
+    }
+
+    .btn-danger:hover {
+        background: #fecaca;
+        color: #991b1b;
+    }
+
+    .btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none;
+    }
+
+    .toast {
+        position: fixed;
+        top: 78px;
+        right: 28px;
+        padding: 12px 18px;
+        border-radius: 8px;
+        color: white;
+        font-size: 0.88rem;
+        font-weight: 600;
+        z-index: 1000;
+        box-shadow: 0 6px 18px rgba(15,23,42,0.18);
+    }
+
+    .toast.success { background: var(--success-color); }
+    .toast.error { background: var(--error-color); }
+
+    @media (max-width: 860px) {
+        .vue-header,
+        .toolbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .layout {
+            grid-template-columns: 1fr;
+        }
+
+        .log-box {
+            min-height: 360px;
+            max-height: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vue-header">
+    <div class="vue-title">
+        <h2><i class="fab fa-vuejs" style="color: #16a34a;"></i> 服务商 Vue 前端</h2>
+        <p id="pageUrl">读取配置中...</p>
+    </div>
+    <div class="toolbar">
+        <button id="startBtn" class="btn btn-primary" onclick="startVue()">
+            <i class="fas fa-play"></i> 启动
+        </button>
+        <button id="openBtn" class="btn btn-success" onclick="openPage()">
+            <i class="fas fa-up-right-from-square"></i> 打开页面并登录
+        </button>
+        <button id="stopBtn" class="btn btn-danger" onclick="stopVue()">
+            <i class="fas fa-stop"></i> 停止
+        </button>
+    </div>
+</div>
+
+<div class="layout">
+    <div class="panel">
+        <div class="panel-head">
+            <span><i class="fas fa-circle-info"></i> 启动信息</span>
+            <span id="statusPill" class="status-pill"><i class="fas fa-circle"></i> 未知</span>
+        </div>
+        <div class="panel-body">
+            <div class="kv">
+                <div>
+                    <label>项目目录</label>
+                    <code id="projectPath">-</code>
+                </div>
+                <div>
+                    <label>启动命令</label>
+                    <code id="commandText">-</code>
+                </div>
+                <div>
+                    <label>登录页面</label>
+                    <code id="loginPageUrl">-</code>
+                </div>
+                <div>
+                    <label>登录账号</label>
+                    <code id="usernameText">-</code>
+                </div>
+                <div>
+                    <label>PID</label>
+                    <code id="pidText">-</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head">
+            <span><i class="fas fa-terminal"></i> 实时日志</span>
+            <button class="btn btn-outline" onclick="clearLogView()">
+                <i class="fas fa-broom"></i> 清空显示
+            </button>
+        </div>
+        <div id="logBox" class="log-box"><span class="log-empty">暂无日志，点击启动后会显示 pnpm dev 输出。</span></div>
+    </div>
+</div>
+
+<script>
+    let nextLogIndex = 0;
+    let pollTimer = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadStatus();
+        pollLogs();
+        pollTimer = setInterval(function() {
+            loadStatus();
+            pollLogs();
+        }, 1000);
+    });
+
+    async function loadStatus() {
+        try {
+            const res = await fetch('/api/service-vue/status');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '读取状态失败');
+            renderStatus(data);
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+
+    function renderStatus(data) {
+        const cfg = data.config || {};
+        document.getElementById('pageUrl').textContent = cfg.page_url || '-';
+        document.getElementById('projectPath').textContent = cfg.project_path || '-';
+        document.getElementById('commandText').textContent = cfg.command || '-';
+        document.getElementById('loginPageUrl').textContent = cfg.login_page_url || '-';
+        document.getElementById('usernameText').textContent = cfg.username || '-';
+        document.getElementById('pidText').textContent = data.pid || '-';
+
+        const pill = document.getElementById('statusPill');
+        pill.className = 'status-pill ' + (data.running ? 'running' : 'stopped');
+        pill.innerHTML = data.running
+            ? '<i class="fas fa-circle-play"></i> 运行中'
+            : '<i class="fas fa-circle-stop"></i> 未运行';
+
+        document.getElementById('startBtn').disabled = !!data.running;
+        document.getElementById('stopBtn').disabled = !data.running;
+    }
+
+    async function startVue() {
+        setBusy('startBtn', true);
+        try {
+            const res = await fetch('/api/service-vue/start', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '启动失败');
+            showToast(data.message || '已启动', 'success');
+            await loadStatus();
+            await pollLogs();
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            setBusy('startBtn', false);
+        }
+    }
+
+    async function stopVue() {
+        setBusy('stopBtn', true);
+        try {
+            const res = await fetch('/api/service-vue/stop', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '停止失败');
+            showToast(data.message || '已停止', 'success');
+            await loadStatus();
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            setBusy('stopBtn', false);
+        }
+    }
+
+    async function openPage() {
+        setBusy('openBtn', true);
+        try {
+            const res = await fetch('/api/service-vue/open', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '打开失败');
+            showToast(data.message || '已打开默认浏览器', 'success');
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            setBusy('openBtn', false);
+        }
+    }
+
+    async function pollLogs() {
+        try {
+            const res = await fetch('/api/service-vue/logs?since=' + nextLogIndex);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '读取日志失败');
+            nextLogIndex = data.next_index || nextLogIndex;
+            appendLogs(data.logs || []);
+        } catch (err) {
+            appendLogs(['读取日志失败: ' + err.message]);
+        }
+    }
+
+    function appendLogs(lines) {
+        if (!lines.length) return;
+        const box = document.getElementById('logBox');
+        if (box.querySelector('.log-empty')) box.textContent = '';
+        const shouldStick = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+        box.textContent += (box.textContent ? '\n' : '') + lines.join('\n');
+        if (shouldStick) box.scrollTop = box.scrollHeight;
+    }
+
+    function clearLogView() {
+        document.getElementById('logBox').innerHTML = '<span class="log-empty">已清空当前显示，后续新日志会继续追加。</span>';
+    }
+
+    function setBusy(id, busy) {
+        const btn = document.getElementById(id);
+        btn.disabled = busy || (id === 'startBtn' && btn.disabled) || (id === 'stopBtn' && btn.disabled);
+    }
+
+    function showToast(message, type) {
+        const old = document.querySelector('.toast');
+        if (old) old.remove();
+        const toast = document.createElement('div');
+        toast.className = 'toast ' + (type || 'success');
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 2600);
+    }
+</script>
+{% endblock %}

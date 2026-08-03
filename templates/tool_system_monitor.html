@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block title %}系统监控{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .monitor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 18px;
+        margin-bottom: 22px;
+    }
+
+    .monitor-title h2 {
+        margin: 0 0 6px;
+        font-size: 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .monitor-title p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+
+    .monitor-panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .panel-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border-color);
+        background: #f8fafc;
+    }
+
+    .status-text {
+        color: var(--text-muted);
+        font-size: 0.84rem;
+    }
+
+    .process-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }
+
+    .process-table th,
+    .process-table td {
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border-color);
+        text-align: left;
+        vertical-align: middle;
+        font-size: 0.9rem;
+    }
+
+    .process-table th {
+        color: var(--text-muted);
+        background: #ffffff;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .process-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .rank-cell {
+        width: 58px;
+        color: var(--text-muted);
+        font-weight: 700;
+    }
+
+    .app-cell {
+        min-width: 0;
+    }
+
+    .app-name {
+        font-weight: 700;
+        color: var(--text-main);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .app-command {
+        margin-top: 4px;
+        color: var(--text-muted);
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.76rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .number-cell {
+        width: 130px;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-main);
+    }
+
+    .memory-bar {
+        height: 7px;
+        background: #e2e8f0;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 6px;
+    }
+
+    .memory-fill {
+        height: 100%;
+        background: #0f766e;
+        border-radius: inherit;
+    }
+
+    .action-cell {
+        width: 118px;
+        text-align: right;
+    }
+
+    .btn-danger {
+        background: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid #fecaca;
+        padding: 7px 12px;
+        border-radius: 6px;
+        font-size: 0.82rem;
+    }
+
+    .btn-danger:hover {
+        background: #fecaca;
+        color: #991b1b;
+        transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none;
+    }
+
+    .empty-state {
+        padding: 48px 18px;
+        text-align: center;
+        color: var(--text-muted);
+    }
+
+    .toast {
+        position: fixed;
+        top: 78px;
+        right: 28px;
+        padding: 12px 18px;
+        border-radius: 8px;
+        color: white;
+        font-size: 0.88rem;
+        font-weight: 600;
+        z-index: 1000;
+        box-shadow: 0 6px 18px rgba(15,23,42,0.18);
+    }
+
+    .toast.success { background: var(--success-color); }
+    .toast.error { background: var(--error-color); }
+
+    @media (max-width: 760px) {
+        .monitor-header,
+        .panel-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .process-table,
+        .process-table tbody,
+        .process-table tr,
+        .process-table td {
+            display: block;
+            width: 100%;
+        }
+
+        .process-table thead {
+            display: none;
+        }
+
+        .process-table tr {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .process-table tr:last-child {
+            border-bottom: none;
+        }
+
+        .process-table td {
+            border-bottom: none;
+            padding: 5px 0;
+        }
+
+        .rank-cell {
+            color: #0f766e;
+        }
+
+        .action-cell {
+            text-align: left;
+            padding-top: 10px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="monitor-header">
+    <div class="monitor-title">
+        <h2><i class="fas fa-chart-simple" style="color: #0f766e;"></i> 系统监控</h2>
+        <p>默认展示当前占用内存最高的 10 个应用，已按应用聚合子进程</p>
+    </div>
+    <button class="btn btn-primary" onclick="loadProcesses()">
+        <i class="fas fa-rotate-right"></i> 刷新
+    </button>
+</div>
+
+<div class="monitor-panel">
+    <div class="panel-toolbar">
+        <strong><i class="fas fa-memory"></i> 内存占用排行</strong>
+        <span id="statusText" class="status-text">正在加载...</span>
+    </div>
+    <div id="processContainer">
+        <div class="empty-state"><i class="fas fa-spinner fa-spin"></i> 读取系统进程中...</div>
+    </div>
+</div>
+
+<script>
+    let currentApplications = [];
+
+    document.addEventListener('DOMContentLoaded', loadProcesses);
+    document.addEventListener('click', function(event) {
+        const button = event.target.closest('[data-action="terminate"]');
+        if (!button) return;
+        const app = currentApplications.find(item => item.id === button.dataset.id);
+        if (!app) return;
+        terminateApplication(app);
+    });
+
+    async function loadProcesses() {
+        const container = document.getElementById('processContainer');
+        const status = document.getElementById('statusText');
+        status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在刷新';
+        container.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> 读取系统进程中...</div>';
+
+        try {
+            const response = await fetch('/api/system/processes?limit=10');
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || '获取进程列表失败');
+            }
+            currentApplications = data.applications || [];
+            renderApplications(currentApplications);
+            status.textContent = '更新时间：' + data.updated_at;
+        } catch (error) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-circle-exclamation"></i> ' + escapeHtml(error.message) + '</div>';
+            status.textContent = '刷新失败';
+        }
+    }
+
+    function renderApplications(applications) {
+        const container = document.getElementById('processContainer');
+        if (!applications.length) {
+            container.innerHTML = '<div class="empty-state">暂无应用数据</div>';
+            return;
+        }
+
+        const maxMemory = Math.max(...applications.map(item => item.memory_kb), 1);
+        const rows = applications.map((app, index) => {
+            const width = Math.max(4, Math.round(app.memory_kb / maxMemory * 100));
+            const primaryProcess = (app.processes || [])[0] || {};
+            return `
+                <tr>
+                    <td class="rank-cell">#${index + 1}</td>
+                    <td class="app-cell">
+                        <div class="app-name" title="${escapeHtml(app.name)}">${escapeHtml(app.name || '未知应用')}</div>
+                        <div class="app-command" title="${escapeHtml(app.sample_command)}">${app.process_count} 个进程 · 主进程 PID ${primaryProcess.pid || '-'} · ${escapeHtml(primaryProcess.command || app.sample_command || '')}</div>
+                    </td>
+                    <td class="number-cell">
+                        <strong>${escapeHtml(app.memory)}</strong>
+                        <div class="memory-bar"><div class="memory-fill" style="width:${width}%;"></div></div>
+                    </td>
+                    <td class="number-cell">${Number(app.memory_percent).toFixed(1)}%</td>
+                    <td class="action-cell">
+                        <button class="btn btn-danger" data-action="terminate" data-id="${escapeHtml(app.id)}">
+                            <i class="fas fa-power-off"></i> 关闭
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <table class="process-table">
+                <thead>
+                    <tr>
+                        <th class="rank-cell">排名</th>
+                        <th>应用</th>
+                        <th class="number-cell">内存</th>
+                        <th class="number-cell">占比</th>
+                        <th class="action-cell">操作</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    async function terminateApplication(app) {
+        const ok = confirm('确认关闭 "' + app.name + '"？\n将尝试关闭 ' + app.process_count + ' 个相关进程。');
+        if (!ok) return;
+
+        try {
+            const response = await fetch('/api/system/applications/terminate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pids: app.pids })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || '关闭失败');
+            }
+            showToast(data.message || '已发送关闭信号', 'success');
+            setTimeout(loadProcesses, 700);
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    function showToast(message, type) {
+        const oldToast = document.querySelector('.toast');
+        if (oldToast) oldToast.remove();
+        const toast = document.createElement('div');
+        toast.className = 'toast ' + type;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2600);
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+</script>
+{% endblock %}

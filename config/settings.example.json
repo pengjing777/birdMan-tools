@@ -1,0 +1,30 @@
+{
+  "port": 5009,
+  "ssh": {
+    "hostname": "",
+    "port": 22,
+    "username": "",
+    "password": ""
+  },
+  "db": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 3306,
+    "user": "",
+    "password": "",
+    "database": "",
+    "charset": "utf8mb4",
+    "connect_timeout": 3
+  },
+  "image_generation": {
+    "model": "",
+    "api_key": "",
+    "base_url": ""
+  },
+  "desktop_assistant": {
+    "enabled": true,
+    "icon_path": "assets/assistant_kingfisher_transparent.png",
+    "emoji": "🤪",
+    "menu_items": []
+  }
+}

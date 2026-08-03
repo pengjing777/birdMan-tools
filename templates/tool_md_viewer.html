@@ -1,0 +1,785 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tool_title }}{% endblock %}
+
+{% block nav_right %}
+<a href="/" class="nav-back"><i class="fas fa-arrow-left"></i> 返回主页</a>
+{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+    window.addEventListener('error', function(e) {
+        if (e.target.tagName === 'SCRIPT' && e.target.src.includes('mermaid')) {
+            var s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js';
+            s.onload = function() { window.__mermaidLoaded = true; };
+            document.head.appendChild(s);
+        }
+    }, true);
+    document.querySelector('script[src*="mermaid"]').onload = function() {
+        window.__mermaidLoaded = true;
+    };
+</script>
+<style>
+    .doc-layout { display: flex; gap: 24px; min-height: calc(100vh - 120px); }
+
+    .doc-sidebar {
+        width: 280px; flex-shrink: 0; background: var(--card-bg);
+        border-radius: 12px; border: 1px solid var(--border-color);
+        padding: 16px; overflow-y: auto;
+        max-height: calc(100vh - 120px); position: sticky; top: 84px;
+    }
+
+    .doc-sidebar-header {
+        padding: 0 0 12px; border-bottom: 1px solid var(--border-color);
+        margin-bottom: 8px;
+    }
+    .sidebar-tabs { display: flex; width: 100%; gap: 4px; }
+    /* 搜索框 */
+    .search-box {
+        position: relative; margin: 8px 0;
+    }
+    .search-box .search-icon {
+        position: absolute; left: 10px; top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted); font-size: 0.8rem;
+        pointer-events: none;
+    }
+    .search-box .search-input {
+        width: 100%; padding: 7px 10px 7px 28px;
+        border: 1px solid var(--border-color); border-radius: 6px;
+        font-size: 0.82rem; outline: none;
+        background: #f8fafc; color: var(--text-main);
+        transition: all 0.15s; box-sizing: border-box;
+    }
+    .search-box .search-input:focus {
+        border-color: var(--primary-color);
+        background: #fff; box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+    }
+    .search-box .search-input::placeholder { color: var(--text-muted); }
+
+    .sidebar-tab {
+        flex: 1; text-align: center; padding: 6px 8px; cursor: pointer;
+        font-size: 0.82rem; border-radius: 6px; transition: all 0.15s;
+        color: var(--text-muted); user-select: none;
+    }
+    .sidebar-tab:hover { background: #f1f5f9; }
+    .sidebar-tab.active { background: #eff6ff; color: var(--primary-color); font-weight: 600; }
+
+    .tree-node { user-select: none; }
+    .tree-node-content {
+        display: flex; align-items: center; gap: 6px;
+        padding: 5px 8px; border-radius: 6px; cursor: pointer;
+        font-size: 0.88rem; transition: background 0.15s;
+        color: var(--text-main); text-decoration: none;
+    }
+    .tree-node-content:hover { background: #f1f5f9; }
+    .tree-node-content.active { background: #eff6ff; color: var(--primary-color); font-weight: 600; }
+    .tree-node-content .icon { width: 16px; text-align: center; flex-shrink: 0; font-size: 0.75rem; color: var(--text-muted); }
+    .tree-node-content .icon.folder { color: #f59e0b; }
+    .tree-node-content .icon.file { color: #94a3b8; }
+    .bm-star {
+        cursor: pointer; font-size: 0.82rem; user-select: none;
+        color: #cbd5e1; transition: color 0.15s; padding: 0 2px; margin-left: auto;
+    }
+    .bm-star:hover { color: #dc2626; }
+    .tree-node-content.bookmarked { color: #dc2626; font-weight: 600; }
+    .tree-node-content.bookmarked .bm-star { color: #dc2626; }
+    .tree-children { padding-left: 20px; }
+    .tree-children.collapsed { display: none; }
+
+    .doc-content {
+        flex: 1; min-width: 0; background: var(--card-bg); border-radius: 12px;
+        border: 1px solid var(--border-color); padding: 36px 40px;
+        overflow-y: auto; max-height: calc(100vh - 120px);
+    }
+    .doc-toolbar {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 12px; padding: 0 0 16px; margin-bottom: 18px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .doc-toolbar-title {
+        min-width: 0; color: var(--text-muted); font-size: 0.86rem;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .doc-toolbar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .doc-content .empty-state {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; min-height: 50vh; color: var(--text-muted); text-align: center;
+    }
+    .doc-content .empty-state i { font-size: 3rem; margin-bottom: 16px; opacity: 0.4; }
+    .doc-content .empty-state p { margin: 0; font-size: 1rem; }
+
+    .markdown-body { line-height: 1.8; color: var(--text-main); font-size: 0.95rem; }
+    .markdown-body,
+    .markdown-body * {
+        user-select: text;
+        -webkit-user-select: text;
+    }
+    .markdown-body h1 { font-size: 1.8rem; margin: 0 0 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+    .markdown-body h2 { font-size: 1.4rem; margin: 28px 0 12px; }
+    .markdown-body h3 { font-size: 1.15rem; margin: 24px 0 10px; }
+    .markdown-body h4 { font-size: 1rem; margin: 20px 0 8px; }
+    .markdown-body p { margin: 0 0 14px; }
+    .markdown-body ul, .markdown-body ol { padding-left: 24px; margin: 0 0 14px; }
+    .markdown-body li { margin-bottom: 4px; }
+    .markdown-body blockquote {
+        margin: 0 0 14px; padding: 8px 16px;
+        border-left: 4px solid var(--primary-color);
+        background: #f8fafc; border-radius: 4px;
+    }
+    .markdown-body code {
+        background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.85rem;
+    }
+    .markdown-body pre {
+        background: #1e293b; color: #e2e8f0; padding: 16px 20px;
+        border-radius: 8px; overflow-x: auto; margin: 0 0 14px;
+    }
+    .markdown-body pre code { background: none; padding: 0; color: inherit; }
+    .markdown-body table { width: 100%; border-collapse: collapse; margin: 0 0 14px; }
+    .markdown-body th, .markdown-body td { padding: 8px 14px; border: 1px solid var(--border-color); text-align: left; }
+    .markdown-body th { background: #f8fafc; font-weight: 600; }
+    .markdown-body img { max-width: 100%; border-radius: 8px; }
+    .markdown-body a { color: var(--primary-color); }
+    .markdown-body hr { border: none; border-top: 1px solid var(--border-color); margin: 24px 0; }
+    .markdown-body .mermaid { background: #f8fafc; padding: 20px; border-radius: 8px; margin: 0 0 14px; overflow-x: auto; }
+
+    .summary-table-wrap { overflow-x: auto; }
+    .summary-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .summary-table th,
+    .summary-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; }
+    .summary-table th { background: #f8fafc; color: var(--text-muted); font-weight: 700; }
+    .summary-table td:nth-child(1) { width: 180px; font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.82rem; }
+    .summary-table td:nth-child(2) { width: 150px; font-weight: 600; }
+    .summary-table td:nth-child(4) { width: 92px; text-align: right; }
+    .summary-desc { color: var(--text-main); line-height: 1.55; }
+    .summary-path { display: block; margin-top: 6px; color: var(--text-muted); font-size: 0.78rem; word-break: break-all; }
+
+    /* 右侧目录面板 */
+    .toc-panel {
+        width: 220px; flex-shrink: 0; display: none;
+        background: var(--card-bg); border-radius: 12px;
+        border: 1px solid var(--border-color); padding: 16px;
+        overflow-y: auto; max-height: calc(100vh - 120px);
+        position: sticky; top: 84px;
+    }
+    .toc-panel.has-toc { display: block; }
+
+    .toc-panel-header {
+        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        padding: 0 4px 12px; border-bottom: 1px solid var(--border-color);
+        margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+    }
+
+    .toc-list { list-style: none; padding: 0; margin: 0; font-size: 0.82rem; line-height: 1.6; }
+    .toc-list ul { list-style: none; padding-left: 14px; margin: 0; }
+    .toc-list li { margin: 0; }
+    .toc-list a {
+        display: block; padding: 3px 6px; border-radius: 4px;
+        color: var(--text-muted); text-decoration: none;
+        transition: all 0.15s;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .toc-list a:hover { background: #f1f5f9; color: var(--text-main); }
+    .toc-list a.active {
+        background: #eff6ff; color: var(--primary-color); font-weight: 600;
+    }
+    .toc-empty {
+        padding: 16px 4px; font-size: 0.82rem; color: var(--text-muted); text-align: center;
+    }
+
+    /* 三栏布局时加宽容器，只在目录面板出现时生效 */
+    .main-content:has(.doc-layout) { max-width: 1440px; }
+
+    @media (max-width: 1200px) {
+        .toc-panel { display: none !important; }
+    }
+    @media (max-width: 768px) {
+        .doc-layout { flex-direction: column; }
+        .doc-sidebar { width: 100%; max-height: 300px; position: static; }
+        .doc-content { padding: 20px; max-height: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="doc-layout">
+    <aside class="doc-sidebar">
+        <div class="doc-sidebar-header">
+            <div class="sidebar-tabs">
+                <span class="sidebar-tab active" data-filter="all" onclick="switchFilter('all')"><i class="fas fa-folder-open"></i> 全部</span>
+                <span class="sidebar-tab" data-filter="bookmark" onclick="switchFilter('bookmark')"><i class="fas fa-star"></i> 收藏</span>
+                {% if api_tree == '/api/skills/tree' %}
+                <span class="sidebar-tab" data-filter="summary" onclick="switchFilter('summary')"><i class="fas fa-table"></i> 说明</span>
+                {% endif %}
+            </div>
+            <div class="search-box">
+                <i class="fas fa-search search-icon"></i>
+                <input type="text" class="search-input" placeholder="搜索文档..." oninput="onSearch(this.value)">
+            </div>
+        </div>
+        <div id="tree-container">
+            <div style="text-align:center; padding:20px; color: var(--text-muted);">
+                <i class="fas fa-spinner fa-spin"></i> 加载中...
+            </div>
+        </div>
+    </aside>
+
+    <main class="doc-content" id="doc-content">
+        <div class="empty-state">
+            <i class="fas fa-file-alt"></i>
+            <p>从左侧目录树选择文档</p>
+        </div>
+    </main>
+
+    <aside class="toc-panel" id="toc-panel">
+        <div class="toc-panel-header">
+            <i class="fas fa-list"></i> 目录
+        </div>
+        <div id="toc-container">
+            <div class="toc-empty">暂无目录</div>
+        </div>
+    </aside>
+</div>
+
+<script>
+    const API_TREE = '{{ api_tree }}';
+    const API_VIEW = '{{ api_view }}';
+    const TOOL_SOURCE = API_TREE === '/api/skills/tree' ? 'skill-query' : 'doc-query';
+    const API_OPEN = TOOL_SOURCE === 'doc-query' ? '/api/docs/open' : '/api/skills/open';
+    let bookmarks = new Set();
+    let treeData = null;
+    let currentFilter = 'all';
+    let currentDocPath = '';
+    let searchKeyword = '';
+    let skillSummaries = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadTree();
+        var params = new URLSearchParams(window.location.search);
+        var openPath = params.get('open');
+        if (openPath) {
+            setTimeout(function() { openDoc(openPath, null); }, 200);
+        }
+    });
+
+    function initMermaid() {
+        if (typeof mermaid !== 'undefined' && !window.__mermaidReady) {
+            mermaid.initialize({ startOnLoad: false, theme: 'default' });
+            window.__mermaidReady = true;
+        }
+    }
+
+    function renderMermaid() {
+        initMermaid();
+        if (typeof mermaid === 'undefined') return;
+        const elements = document.querySelectorAll('.mermaid');
+        if (elements.length === 0) return;
+        try {
+            mermaid.run({ nodes: elements }).catch(function(e) {
+                console.warn('Mermaid render error:', e);
+                try { mermaid.init(undefined, elements); } catch(e2) {}
+            });
+        } catch(e) { console.warn('Mermaid error:', e); }
+    }
+
+    async function loadTree() {
+        try {
+            // 先渲染目录树，不阻塞
+            var treeRes = await fetch(API_TREE);
+            treeData = await treeRes.json();
+            renderCurrentView();
+
+            // 异步加载书签，不阻塞树渲染
+            fetch('/api/bookmarks').then(function(r) {
+                if (r.ok) return r.json();
+            }).then(function(data) {
+                if (data) {
+                    bookmarks = new Set(data);
+                    // 如果当前在全部视图，更新书签样式
+                    if (currentFilter === 'all') {
+                        document.querySelectorAll('.tree-node-content').forEach(function(el) {
+                            // 找到文件路径
+                            var onClick = el.getAttribute('onclick');
+                            if (onClick && onClick.indexOf("openDoc('") === 0) {
+                                var match = onClick.match(/openDoc\('([^']+)'/);
+                                if (match && bookmarks.has(match[1])) {
+                                    el.classList.add('bookmarked');
+                                }
+                            }
+                        });
+                    }
+                }
+            }).catch(function() {});
+        } catch (e) {
+            document.getElementById('tree-container').innerHTML =
+                '<div style="text-align:center;padding:20px;color:var(--error-color);"><i class="fas fa-exclamation-triangle"></i> 加载失败</div>';
+        }
+    }
+
+    function renderTree(node, depth) {
+        if (depth === undefined) depth = 0;
+        if (node.type === 'folder') {
+            if (!node.children || node.children.length === 0) return '';
+            const isSearching = searchKeyword && searchKeyword.trim();
+            let hasVisibleChild = false;
+            let childrenHtml = '';
+            for (const child of (node.children || [])) {
+                const html = renderTree(child, depth + 1);
+                if (html) { hasVisibleChild = true; childrenHtml += html; }
+            }
+            if (!hasVisibleChild) return '';
+            let html = '<div class="tree-node">';
+            html += '<div class="tree-node-content" onclick="toggleFolder(this)">' +
+                '<span class="icon folder"><i class="fas fa-chevron-right"></i></span>' +
+                '<span><i class="fas fa-folder"></i></span>' +
+                '<span>' + escapeHtml(node.name) + '</span></div>';
+            // Root directory (depth 0) expanded by default, sub-folders collapsed
+            html += '<div class="tree-children' + (depth === 0 || isSearching ? '' : ' collapsed') + '">';
+            html += childrenHtml;
+            html += '</div></div>';
+            return html;
+        } else {
+            const displayName = node.name.endsWith('.md') ? node.name.slice(0, -3) : node.name;
+            if (searchKeyword && searchKeyword.trim()) {
+                if (!displayName.toLowerCase().includes(searchKeyword.toLowerCase())) return '';
+            }
+            var isBm = bookmarks.has(node.path);
+            return '<div class="tree-node">' +
+                '<a class="tree-node-content' + (isBm ? ' bookmarked' : '') + '" href="#" onclick="openDoc(\'' + escapeHtml(node.path) + '\', this); return false;">' +
+                '<span class="icon file"><i class="fas fa-file"></i></span>' +
+                '<span>' + escapeHtml(displayName) + '</span>' +
+                '<span class="bm-star" onclick="event.stopPropagation(); toggleBookmark(\'' + escapeHtml(node.path) + '\', \'' + escapeHtml(displayName) + '\', this)">※</span>' +
+                '</a></div>';
+        }
+    }
+
+    function toggleFolder(el) {
+        const children = el.nextElementSibling;
+        if (children) {
+            children.classList.toggle('collapsed');
+            const icon = el.querySelector('.icon i');
+            if (icon) {
+                icon.className = children.classList.contains('collapsed')
+                    ? 'fas fa-chevron-right' : 'fas fa-chevron-down';
+            }
+        }
+    }
+
+    function expandAll() {
+        document.querySelectorAll('.tree-children').forEach(el => el.classList.remove('collapsed'));
+        document.querySelectorAll('.tree-node-content .icon i').forEach(el => el.className = 'fas fa-chevron-down');
+    }
+
+    async function openDoc(path, el) {
+        document.querySelectorAll('.tree-node-content.active').forEach(n => n.classList.remove('active'));
+        if (el) el.classList.add('active');
+        const content = document.getElementById('doc-content');
+        content.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> 加载文档中...</div>';
+        try {
+            const res = await fetch(API_VIEW + '?path=' + encodeURIComponent(path));
+            const data = await res.json();
+            if (res.ok) {
+                currentDocPath = path;
+                var icon = TOOL_SOURCE === 'doc-query' ? 'fa-book' : 'fa-code';
+                const toolbar = '<div class="doc-toolbar">' +
+                    '<div class="doc-toolbar-title"><i class="fas ' + icon + '"></i> ' + escapeHtml(data.name || path) + '</div>' +
+                    '<div class="doc-toolbar-actions">' +
+                    '<button class="btn btn-outline" onclick="copyCurrentDoc(this)"><i class="fas fa-copy"></i> 复制内容</button>' +
+                    '<button class="btn btn-outline" onclick="openMarkdownFile()"><i class="fas fa-up-right-from-square"></i> 打开文档</button>' +
+                    '</div>' +
+                  '</div>';
+                content.innerHTML = toolbar + '<div class="markdown-body">' + data.html + '</div>';
+                content.scrollTop = 0;
+                setTimeout(renderMermaid, 100);
+                buildTOC();
+            } else {
+                content.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle" style="color:var(--error-color);"></i><p>加载失败: ' + escapeHtml(data.error) + '</p></div>';
+                clearTOC();
+            }
+        } catch (e) {
+            content.innerHTML = '<div class="empty-state"><i class="fas fa-wifi" style="color:var(--error-color);"></i><p>连接后端异常</p></div>';
+            clearTOC();
+        }
+    }
+
+    async function openMarkdownFile() {
+        if (!API_OPEN || !currentDocPath) return;
+        try {
+            const res = await fetch(API_OPEN, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: currentDocPath })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert('打开失败：' + (data.error || '未知错误'));
+                return;
+            }
+        } catch (e) {
+            alert('打开失败：连接后端异常');
+        }
+    }
+
+    async function copyCurrentDoc(button) {
+        var content = document.querySelector('#doc-content .markdown-body');
+        var rawText = content ? (content.innerText || content.textContent || '').trim() : '';
+        if (!rawText) {
+            return;
+        }
+
+        var originalHtml = button.innerHTML;
+
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(rawText);
+            } else {
+                var textarea = document.createElement('textarea');
+                textarea.value = rawText;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+
+            button.innerHTML = '<i class="fas fa-check"></i> 已复制';
+        } catch (e) {
+            button.innerHTML = '<i class="fas fa-triangle-exclamation"></i> 复制失败';
+        }
+
+        window.setTimeout(function() {
+            button.innerHTML = originalHtml;
+        }, 1500);
+    }
+
+    function escapeHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function jsString(str) {
+        return JSON.stringify(str || '');
+    }
+
+    /* ---- 导航切换（全部 / 收藏） ---- */
+
+    function switchFilter(mode) {
+        currentFilter = mode;
+        document.querySelectorAll('.sidebar-tab').forEach(function(tab) {
+            tab.classList.toggle('active', tab.getAttribute('data-filter') === mode);
+        });
+        if (mode === 'bookmark') {
+            // Clear search when switching to bookmark view
+            searchKeyword = '';
+            document.querySelector('.search-input').value = '';
+        } else if (mode === 'summary') {
+            searchKeyword = '';
+            document.querySelector('.search-input').value = '';
+        }
+        renderCurrentView();
+    }
+
+    function renderCurrentView() {
+        if (currentFilter === 'all') {
+            document.getElementById('tree-container').innerHTML = renderTree(treeData);
+        } else if (currentFilter === 'bookmark') {
+            renderBookmarkList();
+        } else {
+            renderSummaryList();
+        }
+    }
+
+    function onSearch(value) {
+        searchKeyword = value;
+        if (currentFilter !== 'all') {
+            switchFilter('all');
+            return;
+        }
+        renderCurrentView();
+    }
+
+    function renderBookmarkList() {
+        var bmFiles = [];
+        function collect(node) {
+            if (node.type === 'file' && bookmarks.has(node.path)) {
+                bmFiles.push(node);
+            }
+            if (node.children) node.children.forEach(collect);
+        }
+        if (treeData) collect(treeData);
+
+        if (bmFiles.length === 0) {
+            document.getElementById('tree-container').innerHTML =
+                '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.85rem;"><i class="fas fa-star" style="display:block;font-size:2rem;margin-bottom:12px;opacity:0.3;"></i>暂无收藏的文档</div>';
+            return;
+        }
+
+        var html = '<div class="tree-node">';
+        bmFiles.forEach(function(f) {
+            var displayName = f.name.endsWith('.md') ? f.name.slice(0, -3) : f.name;
+            html += '<a class="tree-node-content bookmarked" href="#" onclick="openDoc(\'' + escapeHtml(f.path) + '\', this); return false;">' +
+                '<span class="icon file"><i class="fas fa-file"></i></span>' +
+                '<span>' + escapeHtml(displayName) + '</span>' +
+                '<span class="bm-star" onclick="event.stopPropagation(); toggleBookmark(\'' + escapeHtml(f.path) + '\', \'' + escapeHtml(displayName) + '\', this)">※</span>' +
+                '</a>';
+        });
+        html += '</div>';
+        document.getElementById('tree-container').innerHTML = html;
+    }
+
+    async function renderSummaryList() {
+        const treeContainer = document.getElementById('tree-container');
+        treeContainer.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> 加载说明中...</div>';
+        try {
+            if (!skillSummaries) {
+                const res = await fetch('/api/skills/summary');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '加载失败');
+                skillSummaries = data;
+            }
+            if (!skillSummaries.length) {
+                treeContainer.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.85rem;"><i class="fas fa-table" style="display:block;font-size:2rem;margin-bottom:12px;opacity:0.3;"></i>暂无文档说明</div>';
+                return;
+            }
+            treeContainer.innerHTML = skillSummaries.map(function(item) {
+                return '<div class="tree-node">' +
+                    '<a class="tree-node-content" href="#" data-path="' + escapeHtml(item.rel_path || '') + '" onclick="openSummaryDocFromEl(this); return false;">' +
+                    '<span class="icon file"><i class="fas fa-table"></i></span>' +
+                    '<span>' + escapeHtml(item.chinese_name || item.folder_name) + '</span>' +
+                    '</a></div>';
+            }).join('');
+            renderSummaryTable();
+        } catch (e) {
+            treeContainer.innerHTML = '<div style="text-align:center;padding:20px;color:var(--error-color);"><i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(e.message) + '</div>';
+        }
+    }
+
+    function renderSummaryTable() {
+        clearTOC();
+        currentDocPath = '';
+        const content = document.getElementById('doc-content');
+        const rows = (skillSummaries || []).map(function(item) {
+            const action = item.rel_path
+                ? '<button class="btn btn-outline" data-path="' + escapeHtml(item.rel_path || '') + '" onclick="openSummaryDocFromEl(this)"><i class="fas fa-up-right-from-square"></i> 查看</button>'
+                : '<button class="btn btn-outline" disabled>不可用</button>';
+            return '<tr>' +
+                '<td>' + escapeHtml(item.folder_name || '') + '</td>' +
+                '<td>' + escapeHtml(item.chinese_name || '') + '</td>' +
+                '<td><div class="summary-desc">' + escapeHtml(item.detail_desc || '') + '</div><span class="summary-path">' + escapeHtml(item.file_path || '') + '</span></td>' +
+                '<td>' + action + '</td>' +
+                '</tr>';
+        }).join('');
+        content.innerHTML = '<div class="doc-toolbar">' +
+            '<div class="doc-toolbar-title"><i class="fas fa-table"></i> Skill 文档说明</div>' +
+            '<div class="doc-toolbar-actions"><button class="btn btn-outline" onclick="refreshSummary()"><i class="fas fa-rotate"></i> 刷新</button></div>' +
+            '</div>' +
+            '<div class="summary-table-wrap"><table class="summary-table">' +
+            '<thead><tr><th>文件夹名</th><th>中文名</th><th>详细描述</th><th>操作</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody></table></div>';
+    }
+
+    async function refreshSummary() {
+        skillSummaries = null;
+        await renderSummaryList();
+    }
+
+    function openSummaryDocFromEl(el) {
+        openSummaryDoc(el.getAttribute('data-path') || '');
+    }
+
+    async function openSummaryDoc(relPath) {
+        if (!relPath) {
+            alert('该记录的文件路径不在当前 skills 目录下，无法打开');
+            return;
+        }
+        try {
+            const res = await fetch('/api/skills/open', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: relPath })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert('打开失败：' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('打开失败：连接后端异常');
+        }
+    }
+
+    /* ---- 收藏 ---- */
+
+    async function toggleBookmark(docPath, docName, starEl) {
+        try {
+            var res = await fetch('/api/bookmarks/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ doc_path: docPath, doc_name: docName, source: TOOL_SOURCE })
+            });
+            var data = await res.json();
+            if (res.ok) {
+                if (data.bookmarked) {
+                    bookmarks.add(docPath);
+                    if (currentFilter === 'all' && starEl) {
+                        starEl.closest('.tree-node-content').classList.add('bookmarked');
+                    }
+                } else {
+                    bookmarks.delete(docPath);
+                    if (currentFilter === 'all' && starEl) {
+                        starEl.closest('.tree-node-content').classList.remove('bookmarked');
+                    }
+                }
+                if (currentFilter === 'bookmark') {
+                    renderBookmarkList();
+                }
+            }
+        } catch (e) {
+            console.warn('收藏操作失败:', e);
+        }
+    }
+
+    /* ---- 右侧目录 (TOC) ---- */
+
+    function clearTOC() {
+        document.getElementById('toc-panel').classList.remove('has-toc');
+        document.getElementById('toc-container').innerHTML = '<div class="toc-empty">暂无目录</div>';
+        var content = document.getElementById('doc-content');
+        content.removeEventListener('scroll', onTOCScroll);
+    }
+
+    function buildTOC() {
+        var container = document.getElementById('toc-container');
+        var panel = document.getElementById('toc-panel');
+        var headings = document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
+
+        if (headings.length === 0) {
+            clearTOC();
+            return;
+        }
+
+        // 确保每个标题都有 id
+        var idCounts = {};
+        headings.forEach(function(h) {
+            if (!h.id) {
+                var baseId = (h.textContent || '').trim().toLowerCase()
+                    .replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '');
+                if (!baseId) baseId = 'heading';
+                if (idCounts[baseId]) {
+                    idCounts[baseId]++;
+                    h.id = baseId + '_' + idCounts[baseId];
+                } else {
+                    idCounts[baseId] = 1;
+                    h.id = baseId;
+                }
+            }
+        });
+
+        // 构建层级目录
+        var items = [];
+        headings.forEach(function(h) {
+            items.push({ level: parseInt(h.tagName[1]), text: h.textContent.trim(), id: h.id });
+        });
+
+        var html = '<ul class="toc-list">';
+        var parentLevels = [];
+
+        items.forEach(function(item) {
+            var level = item.level;
+            while (parentLevels.length > 0 && parentLevels[parentLevels.length - 1] > level) {
+                html += '</li></ul>';
+                parentLevels.pop();
+            }
+            if (parentLevels.length > 0 && parentLevels[parentLevels.length - 1] === level) {
+                html += '</li>';
+            }
+            if (parentLevels.length === 0 || parentLevels[parentLevels.length - 1] < level) {
+                html += '<ul>';
+                parentLevels.push(level);
+            }
+            html += '<li><a href="#' + item.id + '" data-toc-id="' + item.id + '">' + escapeHtml(item.text) + '</a>';
+        });
+
+        while (parentLevels.length > 0) {
+            html += '</li></ul>';
+            parentLevels.pop();
+        }
+
+        container.innerHTML = html;
+        panel.classList.add('has-toc');
+
+        // 绑定点击事件（事件委托）
+        container.addEventListener('click', function(e) {
+            var link = e.target.closest('a');
+            if (link) {
+                e.preventDefault();
+                scrollToHeading(link.getAttribute('data-toc-id'));
+            }
+        });
+
+        // 绑定滚动追踪
+        var content = document.getElementById('doc-content');
+        content.removeEventListener('scroll', onTOCScroll);
+        content.addEventListener('scroll', onTOCScroll);
+        // 初始高亮
+        setTimeout(updateTOCActive, 200);
+    }
+
+    function scrollToHeading(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var content = document.getElementById('doc-content');
+        var offset = 20;
+        var elRect = el.getBoundingClientRect();
+        var contentRect = content.getBoundingClientRect();
+        var target = content.scrollTop + (elRect.top - contentRect.top) - offset;
+        content.scrollTo({ top: target, behavior: 'smooth' });
+        updateTOCActive(id);
+    }
+
+    var _tocRAF = null;
+
+    function onTOCScroll() {
+        if (_tocRAF) return;
+        _tocRAF = requestAnimationFrame(function() {
+            _tocRAF = null;
+            updateTOCActive();
+        });
+    }
+
+    function updateTOCActive(activeId) {
+        var content = document.getElementById('doc-content');
+        var headings = document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
+        var links = document.querySelectorAll('.toc-list a');
+
+        if (!activeId) {
+            var scrollTop = content.scrollTop;
+            var contentRect = content.getBoundingClientRect();
+            var contentTop = contentRect.top;
+            // 从后往前找最后一个在视口上方的标题
+            for (var i = 0; i < headings.length; i++) {
+                var h = headings[i];
+                var hRect = h.getBoundingClientRect();
+                if (hRect.top - contentTop - 80 <= 0) {
+                    activeId = h.id;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        links.forEach(function(a) {
+            if (a.getAttribute('data-toc-id') === activeId) {
+                a.classList.add('active');
+            } else {
+                a.classList.remove('active');
+            }
+        });
+    }
+</script>
+{% endblock %}
