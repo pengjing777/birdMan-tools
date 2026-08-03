@@ -7,4 +7,5 @@ oracledb>=2,<4
 paramiko>=3.4,<5
 PyMySQL>=1.1,<2
 pywebview>=5,<6
+pyobjc>=10,<13; sys_platform == "darwin"
 requests>=2.31,<3
