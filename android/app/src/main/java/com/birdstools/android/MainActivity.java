@@ -17,6 +17,10 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.util.Base64;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
 
@@ -56,12 +60,145 @@ public class MainActivity extends Activity {
     private final List<Animal> animals = new ArrayList<>();
     private LinearLayout content;
     private TextView title;
+    private WebView webView;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        buildShell();
-        showCatalog();
+        ensureAnimalsLoaded();
+        webView = new WebView(this);
+        WebSettings webSettings = webView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+        webSettings.setDomStorageEnabled(true);
+        webSettings.setAllowFileAccess(true);
+        webView.setWebViewClient(new WebViewClient());
+        webView.addJavascriptInterface(new NativeBridge(), "Native");
+        setContentView(webView);
+        webView.loadUrl("file:///android_asset/web/index.html");
+    }
+
+    private void ensureAnimalsLoaded() {
+        if (!animals.isEmpty()) return;
+        try {
+            InputStream input = getAssets().open("国家重点保护野生动物名录.xlsx");
+            ZipInputStream zip = new ZipInputStream(input);
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (!entry.getName().equals("xl/worksheets/sheet1.xml")) continue;
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = zip.read(buffer)) >= 0) out.write(buffer, 0, count);
+                parseAnimals(out.toString("UTF-8"));
+                break;
+            }
+            zip.close();
+        } catch (Exception ignored) { }
+    }
+
+    private class NativeBridge {
+        @JavascriptInterface public String catalog(String query) {
+            JSONArray result = new JSONArray();
+            String keyword = query == null ? "" : query.trim().toLowerCase();
+            try {
+                for (Animal animal : animals) {
+                    String all = (animal.name + animal.latin + animal.family + animal.level).toLowerCase();
+                    if (!keyword.isEmpty() && !all.contains(keyword)) continue;
+                    JSONObject item = new JSONObject();
+                    item.put("name", animal.name); item.put("latin", animal.latin); item.put("family", animal.family); item.put("level", animal.level);
+                    result.put(item); if (result.length() >= 100) break;
+                }
+            } catch (Exception ignored) { }
+            return result.toString();
+        }
+
+        @JavascriptInterface public String records() {
+            return getSharedPreferences(PREFS, MODE_PRIVATE).getString("records", "[]");
+        }
+
+        @JavascriptInterface public String saveRecord(String payload) {
+            try {
+                JSONObject item = new JSONObject(payload);
+                if (item.optString("bird").trim().isEmpty()) return new JSONObject().put("error", "请输入鸟名").toString();
+                JSONArray records = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString("records", "[]"));
+                records.put(item); getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("records", records.toString()).apply();
+                return "{\"ok\":true}";
+            } catch (Exception error) { return "{\"error\":\"保存失败\"}"; }
+        }
+
+        @JavascriptInterface public void deleteRecord(int index) {
+            try {
+                JSONArray records = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString("records", "[]"));
+                if (index >= 0 && index < records.length()) records.remove(index);
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("records", records.toString()).apply();
+            } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface public void toggleBookmark(String type, String value) {
+            try {
+                SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+                JSONArray source = new JSONArray(prefs.getString("bookmarks", "[]"));
+                String key = type + ":" + value; JSONArray target = new JSONArray(); boolean removed = false;
+                for (int i = 0; i < source.length(); i++) {
+                    String current = source.optString(i); if (key.equals(current)) removed = true; else target.put(current);
+                }
+                if (!removed) target.put(key); prefs.edit().putString("bookmarks", target.toString()).apply();
+            } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface public String bookmarks() {
+            JSONArray result = new JSONArray();
+            try {
+                JSONArray saved = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString("bookmarks", "[]"));
+                JSONArray records = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString("records", "[]"));
+                for (int i = 0; i < saved.length(); i++) {
+                    String key = saved.optString(i); JSONObject item = new JSONObject();
+                    if (key.startsWith("species:")) { item.put("type", "保护鸟种"); item.put("title", key.substring(8)); }
+                    else if (key.startsWith("record:")) {
+                        int index = Integer.parseInt(key.substring(7)); JSONObject record = records.optJSONObject(index);
+                        item.put("type", "观鸟记录"); item.put("title", record == null ? "已删除的记录" : record.optString("bird") + " · " + record.optString("location"));
+                    }
+                    result.put(item);
+                }
+            } catch (Exception ignored) { }
+            return result.toString();
+        }
+
+        @JavascriptInterface public String config() {
+            try {
+                SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE); JSONObject data = new JSONObject();
+                data.put("nickname", prefs.getString("nickname", "")); data.put("defaultProvince", prefs.getString("defaultProvince", "重庆市")); return data.toString();
+            } catch (Exception ignored) { return "{}"; }
+        }
+
+        @JavascriptInterface public void saveConfig(String payload) {
+            try {
+                JSONObject data = new JSONObject(payload); getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString("nickname", data.optString("nickname")).putString("defaultProvince", data.optString("defaultProvince", "重庆市")).apply();
+            } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface public void exportRecords() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT); intent.setType("text/csv");
+                intent.putExtra(Intent.EXTRA_TITLE, "鸟友工具箱-鸟类记录.csv"); startActivityForResult(intent, EXPORT_RECORDS);
+            });
+        }
+
+        @JavascriptInterface public void searchBirds(String payload) {
+            new Thread(() -> {
+                JSONObject response = new JSONObject();
+                try {
+                    JSONObject data = new JSONObject(payload);
+                    JSONArray rows = queryBirdReport(data.optString("birdName"), data.optString("province"), data.optString("city"), data.optString("district"), data.optString("start"), data.optString("end"));
+                    response.put("records", rows);
+                } catch (Exception error) {
+                    try { response.put("error", error.getMessage() == null ? "联网查询失败" : error.getMessage()); } catch (Exception ignored) { }
+                }
+                String encoded = JSONObject.quote(response.toString());
+                runOnUiThread(() -> webView.evaluateJavascript("window.onNativeSearchResult(" + encoded + ")", null));
+            }).start();
+        }
     }
 
     private int dp(int value) {
@@ -169,7 +306,7 @@ public class MainActivity extends Activity {
             while (cells.find()) {
                 String column = cells.group(1);
                 Matcher value = Pattern.compile("<x:v>(.*?)</x:v>", Pattern.DOTALL).matcher(cells.group(2));
-                String text = value.find() ? Html.fromHtml(value.group(1), Html.FROM_HTML_MODE_LEGACY).toString() : "";
+                String text = value.find() ? Html.fromHtml(value.group(1)).toString() : "";
                 if ("B".equals(column)) name = text;
                 else if ("C".equals(column)) latin = text;
                 else if ("D".equals(column)) family = text;
