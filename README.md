@@ -122,4 +122,18 @@ release/BirdsTools-Setup.exe
 release/鸟友工具箱-macOS.dmg
 ```
 
+## Android 打包
+
+项目已提供独立 Android 工程，位于 `android/`。当前版本内置保护动物名录，鸟类记录保存在手机本地，支持从手机选择照片，并可直接联网查询公开观鸟记录；不依赖电脑上的 Flask 服务。
+
+### 生成 APK
+
+使用 Android Studio 打开项目中的 `android/` 目录，等待 Gradle 同步完成后执行 `Build > Build APK(s)`。生成的调试 APK 通常位于：
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+首次构建需要 Android Studio（包含 Android SDK 和 JDK 17）。
+
 打包目录 `build/`、`dist/`、`release/` 和 `.venv/` 都是生成文件或本地环境，不需要提交到 GitHub。

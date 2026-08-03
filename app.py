@@ -3303,4 +3303,6 @@ if __name__ == '__main__':
     warmup_caches()
     init_bookmarks_table()
     init_bird_records_tables()
-    app.run(debug=True, port=PORT)
+    # Android WebView 通过局域网访问时，需要让 Flask 监听局域网网卡。
+    # 默认仍只监听本机；启动安卓版服务时设置 BIRDS_TOOLS_HOST=0.0.0.0。
+    app.run(host=os.getenv('BIRDS_TOOLS_HOST', '127.0.0.1'), debug=True, port=PORT)
