@@ -486,9 +486,11 @@ public class MainActivity extends Activity {
         connection.setRequestMethod("POST"); connection.setConnectTimeout(20000); connection.setReadTimeout(30000); connection.setDoOutput(true);
         connection.setRequestProperty("User-Agent", "Mozilla/5.0"); connection.setRequestProperty("Referer", "https://www.birdreport.cn/home/search/page.html");
         connection.setRequestProperty("Origin", "https://www.birdreport.cn"); connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-        String body = "data=" + URLEncoder.encode(Base64.encodeToString(encrypted.toByteArray(), Base64.NO_WRAP), "UTF-8") +
-                "&timestamp=" + timestamp + "&requestId=" + requestId + "&sign=" + sign;
-        OutputStream output = connection.getOutputStream(); output.write(body.getBytes(StandardCharsets.UTF_8)); output.close();
+        connection.setRequestProperty("timestamp", timestamp);
+        connection.setRequestProperty("requestId", requestId);
+        connection.setRequestProperty("sign", sign);
+        byte[] body = Base64.encode(encrypted.toByteArray(), Base64.NO_WRAP);
+        OutputStream output = connection.getOutputStream(); output.write(body); output.close();
         InputStream stream = connection.getResponseCode() >= 400 ? connection.getErrorStream() : connection.getInputStream();
         BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8)); StringBuilder text = new StringBuilder(); String line;
         while ((line = reader.readLine()) != null) text.append(line); reader.close(); connection.disconnect();
@@ -506,7 +508,8 @@ public class MainActivity extends Activity {
         StringBuilder json = new StringBuilder("{"); boolean first = true;
         for (String key : params.keySet()) {
             if (!first) json.append(','); first = false;
-            json.append(JSONObject.quote(key)).append(':').append(JSONObject.quote(params.get(key)));
+            String encodedValue = URLEncoder.encode(params.get(key), "UTF-8").replace("%7E", "~");
+            json.append(JSONObject.quote(key)).append(':').append(JSONObject.quote(encodedValue));
         }
         return json.append('}').toString();
     }
