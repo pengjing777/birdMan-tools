@@ -2185,17 +2185,51 @@ def _call_deepseek(messages):
         }],
         "tool_choice": "auto",
     }
-    response = requests.post(
-        f"{cfg['base_url']}/chat/completions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=cfg["timeout"],
-    )
+    response = None
+    retryable_statuses = {429, 500, 502, 503, 504}
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                f"{cfg['base_url']}/chat/completions",
+                headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=cfg["timeout"],
+            )
+        except requests.RequestException:
+            if attempt >= 2:
+                raise
+            delay = 2 ** attempt
+            app.logger.warning("DeepSeek 网络异常，将在 %s 秒后重试（第 %s/3 次）", delay, attempt + 1)
+            time.sleep(delay)
+            continue
+        if response.status_code not in retryable_statuses or attempt >= 2:
+            break
+        retry_after = response.headers.get("Retry-After", "")
+        try:
+            delay = max(1, min(int(float(retry_after)), 10)) if retry_after else 2 ** attempt
+        except ValueError:
+            delay = 2 ** attempt
+        app.logger.warning(
+            "DeepSeek 返回 HTTP %s，将在 %s 秒后重试（第 %s/3 次）",
+            response.status_code, delay, attempt + 1,
+        )
+        time.sleep(delay)
+    if response is None:
+        raise RuntimeError("DeepSeek 请求没有收到响应")
     if response.status_code >= 400:
         try:
-            detail = response.json().get("error", {}).get("message") or response.text
+            payload = response.json()
         except ValueError:
+            payload = None
+        error_value = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error_value, dict):
+            detail = error_value.get("message") or error_value.get("detail") or response.text
+        elif error_value:
+            detail = str(error_value)
+        else:
             detail = response.text
+        if response.status_code == 503:
+            raise RuntimeError(f"DeepSeek 服务当前繁忙，已自动重试 3 次，请稍后再试：{detail[:500]}")
         raise RuntimeError(f"DeepSeek 请求失败（{response.status_code}）：{detail[:500]}")
     return response.json()
 

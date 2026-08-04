@@ -26,6 +26,19 @@
     .suggestions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .suggestions button { border: 1px solid #bfdbfe; color: #1d4ed8; background: #eff6ff; border-radius: 999px; padding: 7px 11px; cursor: pointer; }
     .tool-note { margin-top: 12px; color: var(--text-muted); font-size: .8rem; }
+    .captcha-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,23,42,.45); }
+    .captcha-modal[hidden] { display: none; }
+    .captcha-dialog { width: min(420px, 100%); background: #fff; border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 20px 45px rgba(15,23,42,.22); overflow: hidden; }
+    .captcha-head, .captcha-actions { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .captcha-head { border-bottom: 1px solid var(--border-color); font-weight: 800; }
+    .captcha-body { padding: 16px; display: grid; gap: 12px; }
+    .captcha-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; align-items: center; }
+    .captcha-row input { height: 40px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: .95rem; }
+    .captcha-image { width: 112px; height: 40px; border: 1px solid var(--border-color); border-radius: 6px; object-fit: cover; cursor: pointer; background: #f8fafc; }
+    .captcha-hint, .captcha-error { font-size: .84rem; line-height: 1.6; }
+    .captcha-hint { color: var(--text-muted); }
+    .captcha-error { min-height: 20px; color: #b91c1c; }
+    .icon-button { width: 32px; height: 32px; border: 1px solid var(--border-color); border-radius: 6px; background: #fff; color: var(--text-muted); cursor: pointer; }
 </style>
 {% endblock %}
 
@@ -51,11 +64,32 @@
     </div>
     <div class="tool-note">提示：首次使用前，请在“配置管理”中填写 DeepSeek API Key。</div>
 </div>
+<div id="captchaModal" class="captcha-modal" hidden>
+    <div class="captcha-dialog">
+        <div class="captcha-head">
+            <span><i class="fas fa-shield-halved"></i> 输入观鸟数据中心验证码</span>
+            <button class="icon-button" title="关闭" onclick="closeCaptchaDialog()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="captcha-body">
+            <div class="captcha-hint">观鸟数据中心触发访问频率校验。验证通过后会自动继续刚才的 AI 查询。</div>
+            <div class="captcha-row">
+                <input id="captchaInput" type="text" placeholder="验证码" maxlength="6" onkeydown="handleCaptchaKey(event)">
+                <img id="captchaImage" class="captcha-image" alt="验证码" title="点击刷新" onclick="refreshCaptcha()">
+            </div>
+            <div id="captchaError" class="captcha-error"></div>
+        </div>
+        <div class="captcha-actions">
+            <button class="btn btn-outline" onclick="refreshCaptcha()"><i class="fas fa-rotate"></i> 刷新</button>
+            <button id="captchaSubmitButton" class="btn btn-primary" onclick="submitCaptcha()"><i class="fas fa-check"></i> 验证并继续</button>
+        </div>
+    </div>
+</div>
 <script>
     const chatHistory = [];
     const messagesEl = document.getElementById('messages');
     const questionEl = document.getElementById('question');
     const sendButton = document.getElementById('sendButton');
+    let pendingQuestion = '';
 
     function appendMessage(role, text) {
         const el = document.createElement('div');
@@ -68,11 +102,13 @@
     function handleKey(event) {
         if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
     }
-    async function sendMessage() {
-        const message = questionEl.value.trim();
+    async function sendMessage(retryMessage) {
+        const message = (retryMessage || questionEl.value).trim();
         if (!message || sendButton.disabled) return;
-        appendMessage('user', message);
-        questionEl.value = '';
+        if (!retryMessage) {
+            appendMessage('user', message);
+            questionEl.value = '';
+        }
         sendButton.disabled = true;
         sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中';
         try {
@@ -81,6 +117,11 @@
                 body: JSON.stringify({message, messages: chatHistory})
             });
             const data = await response.json();
+            if (data.captchaRequired) {
+                pendingQuestion = message;
+                openCaptchaDialog();
+                return;
+            }
             if (!response.ok) throw new Error(data.error || '请求失败');
             appendMessage('assistant', data.answer || '没有返回答案');
             chatHistory.push({role: 'user', content: message}, {role: 'assistant', content: data.answer || ''});
@@ -93,5 +134,47 @@
             questionEl.focus();
         }
     }
+
+    function openCaptchaDialog() {
+        document.getElementById('captchaModal').hidden = false;
+        document.getElementById('captchaInput').value = '';
+        document.getElementById('captchaError').textContent = '';
+        refreshCaptcha();
+        setTimeout(() => document.getElementById('captchaInput').focus(), 50);
+    }
+    function closeCaptchaDialog() {
+        document.getElementById('captchaModal').hidden = true;
+        pendingQuestion = '';
+    }
+    function refreshCaptcha() {
+        document.getElementById('captchaImage').src = '/api/bird-records/captcha?t=' + Date.now();
+    }
+    async function submitCaptcha() {
+        const input = document.getElementById('captchaInput');
+        const button = document.getElementById('captchaSubmitButton');
+        const code = input.value.trim();
+        if (!code) { document.getElementById('captchaError').textContent = '请输入验证码'; input.focus(); return; }
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 验证中';
+        try {
+            const response = await fetch('/api/bird-records/captcha/verify', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || '验证码验证失败');
+            document.getElementById('captchaModal').hidden = true;
+            const question = pendingQuestion;
+            pendingQuestion = '';
+            appendMessage('system', '验证码已通过，正在继续查询…');
+            await sendMessage(question);
+        } catch (error) {
+            document.getElementById('captchaError').textContent = error.message;
+            refreshCaptcha(); input.value = ''; input.focus();
+        } finally {
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-check"></i> 验证并继续';
+        }
+    }
+    function handleCaptchaKey(event) { if (event.key === 'Enter') { event.preventDefault(); submitCaptcha(); } }
 </script>
 {% endblock %}
