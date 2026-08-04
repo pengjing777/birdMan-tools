@@ -59,6 +59,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="鸟友工具箱.app",
+    icon="assets/toolbox_kingfisher_icon_1024.png",
     bundle_identifier="local.birds-tools",
     info_plist={
         "CFBundleName": "BirdsTools",

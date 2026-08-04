@@ -202,6 +202,22 @@
             </div>
         </div>
 
+        <!-- DeepSeek AI -->
+        <div class="config-section">
+            <div class="config-section-title"><i class="fas fa-comments"></i> DeepSeek AI 观鸟问答</div>
+            <div class="config-section-body">
+                <div class="assistant-switch-note" style="margin-bottom:12px;">用于自然语言查询鸟种记录。API Key 仅保存在本机 settings.json 中。</div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:0.35;"><label>API Key</label><input type="password" id="f_deepseek_api_key" placeholder="sk-..."></div>
+                    <div class="form-group" style="flex:0.25;"><label>模型</label><input type="text" id="f_deepseek_model" placeholder="deepseek-chat"></div>
+                    <div class="form-group"><label>接口地址</label><input type="text" id="f_deepseek_base_url" placeholder="https://api.deepseek.com"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="max-width:180px;"><label>超时（秒）</label><input type="number" id="f_deepseek_timeout" min="10" max="180" placeholder="90"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- 桌面 Emoji 助手 -->
         <div class="config-section">
             <div class="config-section-title"><i class="fas fa-face-smile"></i> 桌面 Emoji 助手</div>
@@ -286,6 +302,11 @@
         document.getElementById('f_db_user').value = db.user || '';
         document.getElementById('f_db_password').value = db.password || '';
         document.getElementById('f_db_connect_timeout').value = db.connect_timeout || 3;
+        var deepseek = cfg.deepseek || {};
+        document.getElementById('f_deepseek_api_key').value = deepseek.api_key || '';
+        document.getElementById('f_deepseek_model').value = deepseek.model || 'deepseek-chat';
+        document.getElementById('f_deepseek_base_url').value = deepseek.base_url || 'https://api.deepseek.com';
+        document.getElementById('f_deepseek_timeout').value = deepseek.timeout || 90;
         // 桌面 Emoji 助手
         var assistant = cfg.desktop_assistant || {};
         document.getElementById('f_assistant_enabled').checked = assistant.enabled !== false;
@@ -409,6 +430,12 @@
                 user: document.getElementById('f_db_user').value.trim(),
                 password: dbPassword,
                 connect_timeout: Number(document.getElementById('f_db_connect_timeout').value || 3)
+            },
+            deepseek: {
+                api_key: document.getElementById('f_deepseek_api_key').value.trim(),
+                model: document.getElementById('f_deepseek_model').value.trim() || 'deepseek-chat',
+                base_url: document.getElementById('f_deepseek_base_url').value.trim() || 'https://api.deepseek.com',
+                timeout: Number(document.getElementById('f_deepseek_timeout').value || 90)
             },
             desktop_assistant: collectAssistantConfig(),
         };
