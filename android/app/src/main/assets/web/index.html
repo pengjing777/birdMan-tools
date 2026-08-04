@@ -1,64 +1,10 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>鸟友工具箱</title>
-  <style>
-    :root{--primary:#2563eb;--nav:#1e293b;--bg:#f0f2f5;--card:#fff;--text:#1e293b;--muted:#64748b;--line:#e2e8f0;--danger:#dc2626}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    header{position:sticky;top:0;z-index:5;height:60px;padding:0 18px;background:var(--nav);color:#fff;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px #0003}
-    header b{font-size:18px}header small{opacity:.65}.shell{max-width:1100px;margin:auto;padding:20px 14px 80px}
-    .page{display:none}.page.active{display:block}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 4px 14px #0f172a0a}.tool{cursor:pointer;min-height:132px}.tool h3{margin:10px 0 6px}.tool p,.hint{color:var(--muted);font-size:14px;line-height:1.55}.icon{font-size:28px}
-    h2{margin:4px 0 16px}.back{border:0;background:#ffffff18;color:#fff;border-radius:8px;padding:8px 12px}.form{display:grid;gap:10px}.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}input,textarea,select,button{font:inherit}input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#fff}button.primary{border:0;border-radius:8px;background:var(--primary);color:#fff;padding:12px 16px;font-weight:700}button.secondary{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text);padding:10px 14px}.message{margin-top:12px;padding:11px;border-radius:8px;background:#eff6ff;color:#1d4ed8}.message.error{background:#fef2f2;color:var(--danger)}
-    .list{margin-top:14px;display:grid;gap:8px}.item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}.item b{display:block;margin-bottom:4px}.meta{font-size:13px;color:var(--muted);line-height:1.5}.item-actions{display:flex;gap:8px;margin-top:9px}.item-actions button{padding:6px 10px}.badge{display:inline-block;padding:2px 8px;border-radius:99px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700}.empty{text-align:center;color:var(--muted);padding:32px 8px}
-    @media(max-width:640px){.grid,.row{grid-template-columns:1fr}.shell{padding-top:14px}.tool{min-height:110px}}
-  </style>
-</head>
-<body>
-<header><div><b>🪶 鸟友工具箱</b> <small>| 观鸟助手</small></div><button id="back" class="back" hidden onclick="goHome()">返回主页</button></header>
-<main class="shell">
-  <section id="home" class="page active">
-    <h2>鸟友工具箱</h2><div class="grid">
-      <div class="card tool" onclick="openPage('navigation')"><div class="icon">🔭</div><h3>小鸟导航</h3><p>按鸟种和地区查询公开观鸟记录。</p></div>
-      <div class="card tool" onclick="openPage('records')"><div class="icon">📋</div><h3>鸟类记录</h3><p>记录、查看、收藏并导出你的观鸟数据。</p></div>
-      <div class="card tool" onclick="openPage('catalog')"><div class="icon">🦅</div><h3>保护动物名录</h3><p>离线查询国家重点保护动物。</p></div>
-      <div class="card tool" onclick="openPage('bookmarks')"><div class="icon">⭐</div><h3>我的收藏</h3><p>集中查看收藏的鸟种和记录。</p></div>
-      <div class="card tool" onclick="openPage('config')"><div class="icon">⚙️</div><h3>配置管理</h3><p>仅保存到手机本地，不使用数据库。</p></div>
-    </div>
-  </section>
-
-  <section id="navigation" class="page"><h2>🔭 小鸟导航</h2><div class="card form">
-    <input id="navBird" placeholder="鸟种，例如：金色鸦雀"><div class="row"><input id="navProvince" value="重庆市" placeholder="省份"><input id="navCity" placeholder="城市（可选）"></div>
-    <div class="row"><input id="navDistrict" placeholder="区县（可选）"><span></span></div><div class="row"><input id="navStart" type="date"><input id="navEnd" type="date"></div>
-    <button id="navSearch" class="primary" onclick="searchBirds()">查询</button><div id="navMessage" class="message">请输入鸟种和地区后查询</div><div id="navResults" class="list"></div>
-  </div></section>
-
-  <section id="records" class="page"><h2>📋 鸟类记录</h2><div class="card form">
-    <div class="row"><input id="recBird" placeholder="鸟名"><input id="recLocation" placeholder="观察地点"></div><div class="row"><input id="recDate" type="date"><input id="recCount" type="number" min="1" value="1" placeholder="数量"></div>
-    <textarea id="recNotes" placeholder="备注"></textarea><button class="primary" onclick="saveRecord()">保存记录</button><button class="secondary" onclick="Native.exportRecords()">导出 CSV</button>
-  </div><div id="recordList" class="list"></div></section>
-
-  <section id="catalog" class="page"><h2>🦅 保护动物名录</h2><div class="card"><input id="catalogQuery" placeholder="搜索中文名、拉丁学名或科目" oninput="loadCatalog()"><div id="catalogList" class="list"></div></div></section>
-  <section id="bookmarks" class="page"><h2>⭐ 我的收藏</h2><div id="bookmarkList" class="list"></div></section>
-  <section id="config" class="page"><h2>⚙️ 配置管理</h2><div class="card form"><p class="hint">全部配置保存在当前手机，不连接 MySQL 或 Oracle。</p><input id="nickname" placeholder="昵称"><input id="defaultProvince" placeholder="默认省份"><button class="primary" onclick="saveConfig()">保存配置</button><div id="configMessage"></div></div></section>
-</main>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI观鸟</title>
+<style>
+:root{--ink:#172b2a;--muted:#718381;--green:#1d6b5b;--pale:#eaf4ef;--line:#dce8e3;--bg:#f6faf8}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header{height:66px;background:var(--green);color:#fff;padding:0 20px;display:flex;align-items:center;justify-content:space-between}header h1{font-size:20px;margin:0}header small{opacity:.75}.wrap{max-width:760px;margin:auto;padding:26px 16px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:24px;box-shadow:0 8px 24px #1746380d}h2{margin:0 0 8px;font-size:23px}.sub,.hint{color:var(--muted);font-size:14px;line-height:1.6}.form{display:grid;gap:14px;margin-top:20px}input,textarea,button{font:inherit}input,textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:#fbfdfc;color:var(--ink);outline:none}input:focus,textarea:focus{border-color:var(--green)}button{border:0;border-radius:12px;padding:13px 16px;background:var(--green);color:#fff;font-weight:700;cursor:pointer}button:disabled{opacity:.55}.chat{display:grid;gap:14px;margin:18px 0}.bubble{max-width:92%;padding:13px 15px;border-radius:16px;line-height:1.7;white-space:pre-wrap}.q{justify-self:end;background:var(--green);color:#fff;border-bottom-right-radius:5px}.a{justify-self:start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:5px}.tag{display:inline-block;color:var(--green);background:var(--pale);border-radius:99px;padding:5px 10px;font-size:12px;font-weight:700;margin:10px 0}.toolbar{display:flex;justify-content:space-between;align-items:center;margin:4px 0 10px}.toolbar button{background:transparent;color:var(--muted);padding:5px 0;font-size:13px}.empty{text-align:center;color:var(--muted);padding:30px}.key-note{font-size:13px;color:var(--muted)}.error{color:#b42318;font-size:14px}
+</style></head><body><header><div><h1>🪶 AI 观鸟</h1><small>随时问问你的观鸟顾问</small></div><span>🔭</span></header><main class="wrap">
+<section id="setup" class="card"><span class="tag">首次使用</span><h2>配置 DeepSeek Key</h2><p class="sub">输入你的 DeepSeek API Key，保存后即可开始 AI 观鸟对话。Key 只保存在本机的安全存储中，不会显示在聊天页面。</p><div class="form"><input id="key" type="password" placeholder="sk-..." autocomplete="off"><button onclick="saveKey()">保存并开始对话</button><div id="keyError" class="error"></div><div class="key-note">需要先在 DeepSeek 开放平台创建 API Key，并确保账户有可用额度。</div></div></section>
+<section id="chatPage" hidden><div class="toolbar"><div><h2>AI 观鸟问答</h2><div class="sub">可以问鸟种识别、习性、分布或观鸟技巧</div></div><button onclick="clearChat()">清空记录</button></div><div id="chat" class="chat"></div><div class="card form"><textarea id="question" rows="3" placeholder="例如：春天在城市公园看到一只黄绿色的小鸟，可能是什么？" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask()}"></textarea><button id="send" onclick="ask()">发送问题</button><div class="hint">已保留最近 10 条问答 · Enter 发送，Shift + Enter 换行</div></div></section></main>
 <script>
-window.Native=window.Native||{catalog:()=>"[]",records:()=>"[]",saveRecord:()=>'{"ok":true}',deleteRecord:()=>{},toggleBookmark:()=>{},bookmarks:()=>"[]",config:()=>'{"nickname":"","defaultProvince":"重庆市"}',saveConfig:()=>{},exportRecords:()=>{},searchBirds:()=>setTimeout(()=>window.onNativeSearchResult('{"error":"浏览器预览不执行真实联网查询"}'),100)};
-const $=id=>document.getElementById(id);function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function openPage(id){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');$('back').hidden=false;if(id==='catalog')loadCatalog();if(id==='records')loadRecords();if(id==='bookmarks')loadBookmarks();if(id==='config')loadConfig()}
-function goHome(){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$('home').classList.add('active');$('back').hidden=true}
-function parseNative(text){try{return JSON.parse(text)}catch(e){return {error:'本地数据解析失败'}}}
-function loadCatalog(){const rows=parseNative(Native.catalog($('catalogQuery').value));$('catalogList').innerHTML=rows.length?rows.map((x,i)=>`<div class="item"><b>${esc(x.name)} <span class="badge">${esc(x.level)}</span></b><div class="meta">${esc(x.family)}<br>${esc(x.latin)}</div><div class="item-actions"><button class="secondary" onclick="toggleBookmark('species',${JSON.stringify(x.name)})">收藏</button></div></div>`).join(''):'<div class="empty">没有匹配结果</div>'}
-function loadRecords(){const rows=parseNative(Native.records());$('recordList').innerHTML=rows.length?rows.map((x,i)=>`<div class="item"><b>${esc(x.bird)} · ${esc(x.count||1)}只</b><div class="meta">${esc(x.location)} · ${esc(x.date)}<br>${esc(x.notes||'')}</div><div class="item-actions"><button class="secondary" onclick="toggleBookmark('record',${i})">收藏</button><button class="secondary" onclick="deleteRecord(${i})">删除</button></div></div>`).join(''):'<div class="empty">暂无记录</div>'}
-function saveRecord(){const d={bird:$('recBird').value.trim(),location:$('recLocation').value.trim(),date:$('recDate').value,count:$('recCount').value,notes:$('recNotes').value.trim()};const r=parseNative(Native.saveRecord(JSON.stringify(d)));if(r.error)return alert(r.error);['recBird','recLocation','recNotes'].forEach(id=>$(id).value='');loadRecords()}
-function deleteRecord(i){if(confirm('删除这条记录？')){Native.deleteRecord(i);loadRecords()}}
-function toggleBookmark(type,value){Native.toggleBookmark(type,String(value));alert('收藏状态已更新')}
-function loadBookmarks(){const rows=parseNative(Native.bookmarks());$('bookmarkList').innerHTML=rows.length?rows.map(x=>`<div class="item"><b>${esc(x.title)}</b><div class="meta">${esc(x.type)}</div></div>`).join(''):'<div class="empty">暂无收藏</div>'}
-function loadConfig(){const c=parseNative(Native.config());$('nickname').value=c.nickname||'';$('defaultProvince').value=c.defaultProvince||'重庆市'}
-function saveConfig(){Native.saveConfig(JSON.stringify({nickname:$('nickname').value.trim(),defaultProvince:$('defaultProvince').value.trim()}));$('configMessage').className='message';$('configMessage').textContent='配置已保存'}
-function searchBirds(){const b=$('navSearch');b.disabled=true;$('navMessage').className='message';$('navMessage').textContent='正在查询观鸟数据中心……';$('navResults').innerHTML='';Native.searchBirds(JSON.stringify({birdName:$('navBird').value.trim(),province:$('navProvince').value.trim(),city:$('navCity').value.trim(),district:$('navDistrict').value.trim(),start:$('navStart').value,end:$('navEnd').value}))}
-window.onNativeSearchResult=function(text){const d=parseNative(text),b=$('navSearch');b.disabled=false;if(d.error){$('navMessage').className='message error';$('navMessage').textContent=d.error;return}const rows=d.records||[];$('navMessage').textContent=`查询完成，共 ${rows.length} 条记录`;$('navResults').innerHTML=rows.length?rows.map(x=>`<div class="item"><b>${esc(x.taxon_name||x.taxonname||'-')}</b><div class="meta">${esc(x.pointname||x.point_name||x.location||'-')}<br>${esc(x.record_time||x.observation_time||x.date||'-')} · 数量 ${esc(x.number||x.count||'-')}</div></div>`).join(''):'<div class="empty">没有找到匹配记录</div>'};
-(function(){const t=new Date(),y=new Date(t);y.setDate(t.getDate()-1);const f=d=>d.toISOString().slice(0,10);$('navStart').value=f(y);$('navEnd').value=f(t);$('recDate').value=f(t)})();
-</script>
-</body></html>
+window.Native=window.Native||{hasKey:()=>false,saveKey:()=>'',history:()=> '[]',ask:()=>setTimeout(()=>onAiAnswer('浏览器预览模式，无法连接 DeepSeek'),100),clearHistory:()=>{}};const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function parse(v){try{return typeof v==='string'?JSON.parse(v):v}catch(e){return[]}}function show(){const ready=Native.hasKey();$('setup').hidden=ready;$('chatPage').hidden=!ready;if(ready)render()}function saveKey(){const error=Native.saveKey($('key').value);if(error){$('keyError').textContent=error;return}$('key').value='';show()}function render(){const rows=parse(Native.history());$('chat').innerHTML=rows.length?rows.map(x=>'<div class="bubble q">'+esc(x.question)+'</div><div class="bubble a">'+esc(x.answer)+'</div>').join(''):'<div class="empty">👋 你好！我是你的 AI 观鸟顾问。<br>从一个鸟类问题开始吧。</div>';window.scrollTo(0,document.body.scrollHeight)}function ask(){const q=$('question').value.trim();if(!q)return;$('question').value='';$('send').disabled=true;$('send').textContent='正在思考…';$('chat').insertAdjacentHTML('beforeend','<div class="bubble q">'+esc(q)+'</div><div id="pending" class="bubble a">正在观察资料…</div>');window.scrollTo(0,document.body.scrollHeight);Native.ask(q)}window.onAiAnswer=function(answer){const p=$('pending');if(p)p.remove();$('chat').insertAdjacentHTML('beforeend','<div class="bubble a">'+esc(answer)+'</div>');$('send').disabled=false;$('send').textContent='发送问题';render()};function clearChat(){if(confirm('清空全部问答记录？')){Native.clearHistory();render()}}show();
+</script></body></html>
