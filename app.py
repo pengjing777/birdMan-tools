@@ -161,6 +161,13 @@ TOOLS = [
         "color": "#16a34a"
     },
     {
+        "id": "ai-bird-chat",
+        "name": "AI 观鸟问答",
+        "description": "对接 DeepSeek，用自然语言查询鸟种记录并自动总结。",
+        "icon": "fa-comments",
+        "color": "#2563eb"
+    },
+    {
         "id": "photo-classify",
         "name": "照片分类管理",
         "description": "扫描照片，按拍摄日期自动归类整理到目标文件夹。",
@@ -2089,6 +2096,160 @@ def api_bird_records():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def _deepseek_config():
+    cfg = _manager.get_all().get("deepseek") or {}
+    try:
+        timeout = int(cfg.get("timeout") or 90)
+    except (TypeError, ValueError):
+        timeout = 90
+    return {
+        "model": str(cfg.get("model") or "deepseek-chat").strip(),
+        "api_key": str(cfg.get("api_key") or "").strip(),
+        "base_url": str(cfg.get("base_url") or "https://api.deepseek.com").strip().rstrip("/"),
+        "timeout": max(10, min(timeout, 180)),
+    }
+
+
+def _ai_bird_records_tool(arguments):
+    today = datetime.now()
+    default_start = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = str(arguments.get("start_date") or default_start).strip()
+    end_date = str(arguments.get("end_date") or today.strftime("%Y-%m-%d")).strip()
+    province = str(arguments.get("province") or "北京市").strip()
+    city = str(arguments.get("city") or "").strip()
+    location_keyword = str(arguments.get("location_keyword") or "").strip()
+    validate_bird_dates(start_date, end_date)
+    if not province:
+        raise ValueError("查询区域不能为空")
+
+    details = fetch_birdreport_public_area_details(province, start_date, end_date, city)
+    levels = get_protected_wildlife_level({item.get("bird_name") for item in details})
+    for item in details:
+        item["protection_level"] = levels.get(item.get("bird_name"))
+    if location_keyword:
+        keyword = location_keyword.casefold()
+        details = [item for item in details if keyword in (item.get("observation_location") or "").casefold()]
+
+    grouped = group_bird_details_by_location(details)
+    locations = []
+    for item in grouped[:20]:
+        item_details = item["details"]
+        locations.append({
+            "location": item["location"],
+            "species_count": item["species_count"],
+            "record_count": item["record_count"],
+            "report_count": item["report_count"],
+            "bird_names": sorted({d.get("bird_name") for d in item_details if d.get("bird_name")}),
+        })
+    return {
+        "query": {
+            "province": province,
+            "city": city,
+            "location_keyword": location_keyword,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+        "record_total": len(details),
+        "location_total": len(grouped),
+        "locations": locations,
+        "source": "观鸟数据中心 https://www.birdreport.cn/home/search/page.html",
+    }
+
+
+def _call_deepseek(messages):
+    cfg = _deepseek_config()
+    if not cfg["api_key"]:
+        raise RuntimeError("尚未配置 DeepSeek API Key，请先在配置管理中填写")
+    payload = {
+        "model": cfg["model"],
+        "messages": messages,
+        "temperature": 0.2,
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "query_bird_records",
+                "description": "查询观鸟数据中心在指定日期、区域或地点关键词下的公开鸟种记录。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "开始日期，格式 YYYY-MM-DD"},
+                        "end_date": {"type": "string", "description": "结束日期，格式 YYYY-MM-DD"},
+                        "province": {"type": "string", "description": "省或直辖市，例如 北京市"},
+                        "city": {"type": "string", "description": "城市，例如 青岛市；直辖市可留空"},
+                        "location_keyword": {"type": "string", "description": "地点关键词，例如 天坛；没有地点限制时留空"},
+                    },
+                    "required": ["start_date", "end_date", "province"],
+                    "additionalProperties": False,
+                },
+            },
+        }],
+        "tool_choice": "auto",
+    }
+    response = requests.post(
+        f"{cfg['base_url']}/chat/completions",
+        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=cfg["timeout"],
+    )
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("error", {}).get("message") or response.text
+        except ValueError:
+            detail = response.text
+        raise RuntimeError(f"DeepSeek 请求失败（{response.status_code}）：{detail[:500]}")
+    return response.json()
+
+
+@app.route('/api/ai-bird-chat', methods=['POST'])
+def api_ai_bird_chat():
+    data = request.get_json(silent=True) or {}
+    user_message = str(data.get("message") or "").strip()
+    if not user_message:
+        return jsonify({"error": "请输入问题"}), 400
+    history = []
+    for item in (data.get("messages") or [])[-10:]:
+        if isinstance(item, dict) and item.get("role") in ("user", "assistant") and item.get("content"):
+            history.append({"role": item["role"], "content": str(item["content"])[:4000]})
+    today = datetime.now().strftime("%Y-%m-%d")
+    messages = [{
+        "role": "system",
+        "content": (
+            f"你是鸟友工具箱的观鸟助手。今天是 {today}。"
+            "涉及具体鸟种、数量、地点或日期时，必须调用 query_bird_records 获取真实数据，不能凭常识猜测。"
+            "请用中文简洁总结，明确说明查询日期、区域、地点匹配和记录数量；没有结果时明确说明。"
+            "不要虚构鸟名、数量或观察结论。"
+        ),
+    }]
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+    try:
+        tool_result = None
+        for _ in range(3):
+            result = _call_deepseek(messages)
+            choice = (result.get("choices") or [{}])[0]
+            assistant_message = choice.get("message") or {}
+            tool_calls = assistant_message.get("tool_calls") or []
+            if not tool_calls:
+                return jsonify({"answer": assistant_message.get("content") or "DeepSeek 没有返回文字答案。", "tool_result": tool_result})
+            messages.append(assistant_message)
+            for tool_call in tool_calls:
+                function = tool_call.get("function") or {}
+                if function.get("name") != "query_bird_records":
+                    continue
+                try:
+                    arguments = json.loads(function.get("arguments") or "{}")
+                    tool_result = _ai_bird_records_tool(arguments)
+                    tool_content = json.dumps(tool_result, ensure_ascii=False)
+                except (ValueError, TypeError) as exc:
+                    tool_content = json.dumps({"error": str(exc)}, ensure_ascii=False)
+                messages.append({"role": "tool", "tool_call_id": tool_call.get("id"), "content": tool_content[:30000]})
+        return jsonify({"error": "DeepSeek 多次调用工具仍未完成回答"}), 502
+    except BirdreportCaptchaRequired as exc:
+        return jsonify({"error": f"鸟种数据查询需要验证码，请先在鸟种记录页面完成验证：{exc}", "captchaRequired": True}), 429
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
 @app.route('/api/bird-navigation/suggest', methods=['GET'])
 def api_bird_navigation_suggest():
     keyword = request.args.get("keyword", "").strip()
@@ -2954,6 +3115,8 @@ def tool_page(tool_id):
         return render_template('tool_system_monitor.html', tools=TOOLS)
     if tool_id == "bird-records":
         return render_template('tool_bird_records.html', tools=TOOLS)
+    if tool_id == "ai-bird-chat":
+        return render_template('tool_ai_bird_chat.html', tools=TOOLS)
     if tool_id == "fund-transfer-test":
         return render_template('tool_fund_transfer_test.html', tools=TOOLS)
     if tool_id == "service-vue":

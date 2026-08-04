@@ -21,6 +21,12 @@
     "api_key": "",
     "base_url": ""
   },
+  "deepseek": {
+    "model": "deepseek-chat",
+    "api_key": "",
+    "base_url": "https://api.deepseek.com",
+    "timeout": 90
+  },
   "desktop_assistant": {
     "enabled": true,
     "icon_path": "assets/assistant_kingfisher_transparent.png",

@@ -66,6 +66,12 @@ _DEFAULTS = {
         "api_key": "",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
     },
+    "deepseek": {
+        "model": "deepseek-chat",
+        "api_key": "",
+        "base_url": "https://api.deepseek.com",
+        "timeout": 90,
+    },
     "service_vue_frontend": {
         "project_path": "/Users/wangpengjing/sbyProject/tax_pay_ext/bossmgr-new-console",
         "command": "pnpm dev",
