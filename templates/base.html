@@ -3,122 +3,179 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#123c3a">
     <title>{% block title %}鸟友工具箱{% endblock %} | 鸟友工具箱</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='15' y='15' width='70' height='70' rx='16' fill='%232563eb'/><rect x='30' y='30' width='40' height='40' rx='8' fill='white' opacity='0.9'/><rect x='40' y='40' width='20' height='20' rx='4' fill='%232563eb'/></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='43' fill='%23123c3a'/><path d='M28 59c18 1 19-26 37-21-4 4-5 8-4 12 6 2 10 7 11 14-15-7-27 8-44-5Z' fill='%23fff'/><circle cx='58' cy='42' r='2.5' fill='%23123c3a'/></svg>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary-color: #2563eb;
-            --success-color: #10b981;
-            --error-color: #ef4444;
-            --bg-color: #f0f2f5;
+            --primary-color: #0f766e;
+            --primary-hover: #0b5f59;
+            --primary-soft: #e7f5f2;
+            --success-color: #16a34a;
+            --error-color: #dc2626;
+            --bg-color: #f5f7f3;
             --card-bg: #ffffff;
-            --text-main: #1e293b;
-            --text-muted: #64748b;
-            --header-bg: #1e293b;
-            --border-color: #e2e8f0;
+            --input-bg: #ffffff;
+            --hover-bg: #f1f5f1;
+            --text-main: #18312f;
+            --text-muted: #667b77;
+            --header-bg: rgba(18, 60, 58, 0.96);
+            --border-color: #dfe8e3;
+            --accent: var(--primary-color);
+            --shadow-sm: 0 1px 2px rgba(18, 60, 58, 0.04), 0 4px 14px rgba(18, 60, 58, 0.05);
+            --shadow-md: 0 18px 45px rgba(18, 60, 58, 0.11);
         }
 
         * { box-sizing: border-box; }
 
+        html { scroll-behavior: smooth; }
+
         body {
-            font-family: 'Inter', -apple-system, system-ui, sans-serif;
-            background-color: var(--bg-color);
+            font-family: Inter, "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background:
+                radial-gradient(circle at 6% 0%, rgba(168, 210, 193, 0.22), transparent 25rem),
+                var(--bg-color);
             color: var(--text-main);
             margin: 0;
             min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
         }
 
-        /* 顶部导航 */
+        button, input, textarea, select { font: inherit; }
+        button, a { -webkit-tap-highlight-color: transparent; }
+        ::selection { background: #bfe3da; color: #123c3a; }
+
         .navbar {
             background: var(--header-bg);
-            padding: 0 30px;
-            height: 60px;
+            padding: 0 clamp(18px, 4vw, 48px);
+            min-height: 68px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 20px;
             color: white;
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            border-bottom: 1px solid rgba(255,255,255,0.09);
+            box-shadow: 0 8px 28px rgba(18, 60, 58, 0.12);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
         }
 
         .navbar-brand {
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 10px;
-            font-size: 1.1rem;
-            font-weight: 600;
+            gap: 12px;
+            min-width: 0;
+            font-size: 1.02rem;
+            font-weight: 760;
+            letter-spacing: 0.02em;
             text-decoration: none;
             color: white;
         }
 
-        .navbar-brand span { font-weight: 200; opacity: 0.6; }
+        .brand-mark {
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.12);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
+        }
+
+        .brand-mark i { transform: rotate(-8deg); }
+        .navbar-brand span { font-weight: 400; opacity: 0.62; }
 
         .nav-back {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             gap: 8px;
-            color: rgba(255,255,255,0.8);
+            color: rgba(255,255,255,0.82);
             text-decoration: none;
-            font-size: 0.9rem;
-            padding: 6px 14px;
-            border-radius: 6px;
-            transition: all 0.2s;
+            font-size: 0.88rem;
+            font-weight: 600;
+            padding: 9px 14px;
+            border: 1px solid rgba(255,255,255,0.13);
+            border-radius: 999px;
+            transition: color 0.2s, background 0.2s, transform 0.2s;
         }
 
         .nav-back:hover {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.12);
             color: white;
+            transform: translateX(-2px);
         }
 
-        /* 主体 */
         .main-content {
-            max-width: 1200px;
+            width: 100%;
+            max-width: 1240px;
             margin: 0 auto;
-            padding: 30px;
+            padding: clamp(22px, 4vw, 42px) clamp(16px, 4vw, 32px) 56px;
         }
 
-        /* 按钮 */
         .btn {
-            padding: 10px 20px;
-            border-radius: 8px;
+            min-height: 40px;
+            padding: 9px 18px;
+            border-radius: 10px;
             border: none;
-            font-weight: 600;
+            font-weight: 650;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            transition: all 0.2s;
-            font-size: 0.9rem;
+            transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
+            font-size: 0.88rem;
         }
-        .btn-primary { background: var(--primary-color); color: white; justify-content: center; }
-        .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
-        .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); }
-        .btn-outline:hover { background: #f1f5f9; color: var(--text-main); }
+        .btn-primary { background: var(--primary-color); color: white; justify-content: center; box-shadow: 0 6px 14px rgba(15,118,110,.16); }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 9px 20px rgba(15,118,110,.22); }
+        .btn-outline { background: #fff; border: 1px solid var(--border-color); color: var(--text-muted); }
+        .btn-outline:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-main); border-color: #cbdad3; }
         .btn-success { background: var(--success-color); color: white; }
-        .btn-success:hover { background: #059669; }
+        .btn-success:hover:not(:disabled) { background: #15803d; }
+        .btn:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+            outline: 3px solid rgba(15,118,110,.22);
+            outline-offset: 2px;
+        }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .fade-in { animation: fadeIn 0.4s ease; }
+        .fade-in { animation: fadeIn 0.45s ease both; }
+
+        @media (max-width: 640px) {
+            .navbar { min-height: 62px; }
+            .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+            .navbar-brand span { display: none; }
+            .nav-back { padding: 8px 11px; }
+            .nav-back i { margin: 0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+        }
     </style>
     {% block head_extra %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar">
-        <a href="/" class="navbar-brand">
-            <i class="fas fa-feather-pointed"></i> 鸟友工具箱 <span>| 观鸟助手</span>
+    <nav class="navbar" aria-label="主导航">
+        <a href="/" class="navbar-brand" aria-label="鸟友工具箱主页">
+            <span class="brand-mark"><i class="fas fa-feather-pointed"></i></span>
+            <strong>鸟友工具箱</strong> <span>观鸟助手</span>
         </a>
         {% block nav_right %}{% endblock %}
     </nav>
 
-    <div class="main-content fade-in">
+    <main class="main-content fade-in">
         {% block content %}{% endblock %}
-    </div>
+    </main>
 </body>
 </html>

@@ -17,6 +17,7 @@ import urllib.request
 import uuid
 import webbrowser
 import zipfile
+import unicodedata
 import requests
 from io import BytesIO
 from xml.sax.saxutils import escape as xml_escape
@@ -166,13 +167,6 @@ TOOLS = [
         "description": "对接 DeepSeek，用自然语言查询鸟种记录并自动总结。",
         "icon": "fa-comments",
         "color": "#2563eb"
-    },
-    {
-        "id": "photo-classify",
-        "name": "照片分类管理",
-        "description": "扫描照片，按拍摄日期自动归类整理到目标文件夹。",
-        "icon": "fa-images",
-        "color": "#e91e63"
     },
     {
         "id": "bird-navigation",
@@ -1386,14 +1380,19 @@ def excel_safe_sheet_name(name, fallback):
     cleaned = re.sub(r"[\[\]\*\?/\\:]", "", str(name or "")).strip()
     return (cleaned or fallback)[:31]
 
-def excel_cell_xml(row_index, col_index, value):
+def excel_cell_xml(row_index, col_index, value, header=False):
     ref = f"{excel_column_name(col_index)}{row_index}"
+    style = ' s="1"' if header else ""
     if value is None:
-        return f'<c r="{ref}"/>'
+        return f'<c r="{ref}"{style}/>'
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return f'<c r="{ref}"><v>{value}</v></c>'
+        return f'<c r="{ref}"{style}><v>{value}</v></c>'
     text = xml_escape(str(value), {'"': "&quot;", "'": "&apos;"})
-    return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
+    return f'<c r="{ref}"{style} t="inlineStr"><is><t>{text}</t></is></c>'
+
+def excel_display_width(value):
+    """按 Excel 中英文字符的大致显示宽度估算列宽。"""
+    return sum(2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1 for char in str(value))
 
 def build_excel_sheet_xml(rows):
     max_cols = max((len(row) for row in rows), default=1)
@@ -1404,12 +1403,16 @@ def build_excel_sheet_xml(rows):
         max_width = 10
         for row in rows[:200]:
             if col_index <= len(row) and row[col_index - 1] is not None:
-                max_width = max(max_width, min(len(str(row[col_index - 1])) + 2, 36))
+                max_width = max(max_width, min(excel_display_width(row[col_index - 1]) + 2, 50))
         widths.append(f'<col min="{col_index}" max="{col_index}" width="{max_width}" customWidth="1"/>')
     row_xml = []
     for row_index, row in enumerate(rows, start=1):
-        cells = "".join(excel_cell_xml(row_index, col_index, value) for col_index, value in enumerate(row, start=1))
-        row_xml.append(f'<row r="{row_index}">{cells}</row>')
+        cells = "".join(
+            excel_cell_xml(row_index, col_index, value, header=row_index == 1)
+            for col_index, value in enumerate(row, start=1)
+        )
+        height = ' ht="24" customHeight="1"' if row_index == 1 else ""
+        row_xml.append(f'<row r="{row_index}"{height}>{cells}</row>')
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
@@ -1477,11 +1480,15 @@ def build_bird_records_xlsx(sheets):
         workbook.writestr("xl/styles.xml", (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>'
-            '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>'
+            '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
+            '<font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts>'
+            '<fills count="3"><fill><patternFill patternType="none"/></fill>'
+            '<fill><patternFill patternType="gray125"/></fill>'
+            '<fill><patternFill patternType="solid"><fgColor rgb="FF17705E"/><bgColor indexed="64"/></patternFill></fill></fills>'
             '<borders count="1"><border/></borders>'
             '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-            '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>'
+            '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+            '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>'
             '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
             '</styleSheet>'
         ))
@@ -1583,6 +1590,61 @@ def get_latest_bird_batch_export_data(conn):
         "details": details,
         "all_location_summaries": all_location_summaries,
         "summaries": summaries,
+        "bird_summaries": bird_summaries,
+    }
+
+def get_memory_bird_batch_export_data(memory_batch):
+    """把无数据库模式下的最近一次内存查询整理成与数据库导出相同的结构。"""
+    if not memory_batch or memory_batch.get("expires_at", 0) <= time.monotonic():
+        return None
+    result = memory_batch.get("result") or {}
+    batch_no = result.get("batchNo")
+    details = list(memory_batch.get("details") or [])
+    if not batch_no:
+        return None
+
+    grouped_locations = {}
+    protected_groups = {}
+    for detail in details:
+        location = detail.get("observation_location") or ""
+        if not location:
+            continue
+        grouped_locations.setdefault(location, []).append(detail)
+        protection_level = detail.get("protection_level")
+        bird_name = detail.get("bird_name") or ""
+        if protection_level in ("Ⅰ级", "Ⅱ级") and bird_name:
+            protected_groups.setdefault((location, bird_name, protection_level), []).append(detail)
+
+    all_location_summaries = []
+    for location, location_details in grouped_locations.items():
+        all_location_summaries.append({
+            "location_name": location,
+            "species_count": len({item.get("bird_name") for item in location_details if item.get("bird_name")}),
+            "report_count": len({item.get("report_no") for item in location_details if item.get("report_no")}),
+            "record_count": len(location_details),
+            "individual_count": sum(item.get("bird_count") or 0 for item in location_details),
+        })
+    all_location_summaries.sort(
+        key=lambda item: (-item["species_count"], -item["record_count"], item["location_name"])
+    )
+
+    bird_summaries = []
+    for (location, bird_name, protection_level), bird_details in sorted(protected_groups.items()):
+        bird_summaries.append({
+            "observation_location": location,
+            "bird_name": bird_name,
+            "protection_level": protection_level,
+            "record_count": len(bird_details),
+            "report_count": len({item.get("report_no") for item in bird_details if item.get("report_no")}),
+            "individual_count": sum(item.get("bird_count") or 0 for item in bird_details),
+        })
+
+    return {
+        "batch_no": batch_no,
+        "source_table": "memory",
+        "details": details,
+        "all_location_summaries": all_location_summaries,
+        "summaries": list(result.get("saved") or []),
         "bird_summaries": bird_summaries,
     }
 
@@ -1924,12 +1986,18 @@ def api_bird_records_latest():
 @app.route('/api/bird-records/export/latest', methods=['GET'])
 def api_bird_records_export_latest():
     init_bird_records_tables()
+    conn = None
     try:
-        conn = get_db()
-        export_data = get_latest_bird_batch_export_data(conn)
-        conn.close()
+        if _manager.db_enabled:
+            conn = get_db()
+            export_data = get_latest_bird_batch_export_data(conn)
+            conn.close()
+            conn = None
+        else:
+            export_data = get_memory_bird_batch_export_data(_LATEST_MEMORY_BATCH)
         if not export_data:
-            return jsonify({"error": "还没有可下载的鸟种记录批次"}), 404
+            message = "查询缓存已过期，请重新查询后在五分钟内下载" if not _manager.db_enabled else "还没有可下载的鸟种记录批次"
+            return jsonify({"error": message}), 404
         workbook = build_bird_records_export_workbook(export_data)
         filename = f"bird_records_{export_data['batch_no']}.xlsx"
         return send_file(
@@ -1940,6 +2008,9 @@ def api_bird_records_export_latest():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/api/bird-records/clear', methods=['POST'])
 def api_bird_records_clear():

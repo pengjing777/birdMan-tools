@@ -825,7 +825,41 @@
 
     function downloadLatestSource() {
         if (!topRows.length) return;
-        window.location.href = '/api/bird-records/export/latest';
+        const button = document.getElementById('exportButton');
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中';
+        fetch('/api/bird-records/export/latest')
+            .then(async response => {
+                if (!response.ok) {
+                    let message = 'Excel 导出失败';
+                    try {
+                        const data = await response.json();
+                        message = data.error || message;
+                    } catch (error) {
+                        // 服务端没有返回 JSON 时保留通用错误信息。
+                    }
+                    throw new Error(message);
+                }
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^";]+)"?/i);
+                return Promise.all([response.blob(), Promise.resolve(match ? match[1] : 'bird_records.xlsx')]);
+            })
+            .then(([blob, filename]) => {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                showMessage('Excel 已生成并开始下载', false);
+            })
+            .catch(error => showMessage(error.message, true))
+            .finally(() => {
+                button.disabled = !topRows.length;
+                button.innerHTML = '<i class="fas fa-file-excel"></i> 下载数据来源';
+            });
     }
 
     function clearBirdRecordData() {

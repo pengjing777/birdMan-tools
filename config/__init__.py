@@ -105,12 +105,6 @@ _DEFAULTS = {
                 "target": "bird-records",
                 "enabled": True,
             },
-            {
-                "label": "照片分类管理",
-                "action": "open_tool",
-                "target": "photo-classify",
-                "enabled": True,
-            },
         ],
     },
     "git_branch_manager": {
@@ -133,7 +127,7 @@ _DEFAULTS = {
             },
         ],
     },
-    "home_tool_order": ["config-manager", "bird-records", "photo-classify"],
+    "home_tool_order": ["config-manager", "bird-records", "ai-bird-chat", "bird-navigation"],
 }
 
 

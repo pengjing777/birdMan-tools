@@ -49,7 +49,6 @@ ASSISTANT_DEFAULTS = {
     "menu_items": [
         {"label": "配置管理", "action": "open_tool", "target": "config-manager", "enabled": True},
         {"label": "鸟种记录", "action": "open_tool", "target": "bird-records", "enabled": True},
-        {"label": "照片分类管理", "action": "open_tool", "target": "photo-classify", "enabled": True},
     ],
 }
 
@@ -417,6 +416,8 @@ class DesktopAssistantController:
         menu_items = []
         for item in merged.get("menu_items") or []:
             if not isinstance(item, dict) or item.get("enabled") is False:
+                continue
+            if str(item.get("target") or "").strip() == "photo-classify":
                 continue
             label = str(item.get("label") or "").strip()
             action = str(item.get("action") or "").strip()
