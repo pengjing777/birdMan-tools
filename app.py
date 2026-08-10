@@ -19,6 +19,7 @@ import webbrowser
 import zipfile
 import unicodedata
 import requests
+from html import escape as html_escape
 from io import BytesIO
 from xml.sax.saxutils import escape as xml_escape
 from cryptography.hazmat.primitives import padding as sym_padding, serialization
@@ -167,6 +168,13 @@ TOOLS = [
         "description": "对接 DeepSeek，用自然语言查询鸟种记录并自动总结。",
         "icon": "fa-comments",
         "color": "#2563eb"
+    },
+    {
+        "id": "photo-classify",
+        "name": "照片分类管理",
+        "description": "扫描照片、按拍摄日期分组，并复制或移动到日期目录。",
+        "icon": "fa-images",
+        "color": "#e91e63"
     },
     {
         "id": "bird-navigation",
@@ -1077,6 +1085,28 @@ def parse_bird_count(value):
         return None
     return int(match.group(0))
 
+def get_bird_record_blacklist():
+    """读取观鸟记录用户黑名单，并统一去重、忽略大小写匹配。"""
+    raw = _manager.get_all().get("bird_record_blacklist", [])
+    if isinstance(raw, str):
+        raw = re.split(r"[,，\n]", raw)
+    result = []
+    seen = set()
+    for value in raw or []:
+        name = str(value or "").strip()
+        key = name.casefold()
+        if name and key not in seen:
+            seen.add(key)
+            result.append(name)
+    return result
+
+def filter_bird_record_blacklist(details):
+    blocked = {name.casefold() for name in get_bird_record_blacklist()}
+    if not blocked:
+        return details
+    return [item for item in details
+            if str(item.get("record_user") or "").strip().casefold() not in blocked]
+
 def join_bird_location(record, fallback_location):
     province = str(record.get("province_name") or "").strip()
     city = str(record.get("city_name") or "").strip()
@@ -1548,19 +1578,22 @@ def get_latest_bird_batch_export_data(conn):
             WHERE d.batch_no = %s
             ORDER BY d.observation_location ASC, d.bird_name ASC, d.report_no ASC, d.id ASC
         """.format(source_table=source_table), (batch_no,))
-        details = dict_rows(cur)
-        cur.execute("""
-            SELECT observation_location AS location_name,
-                   COUNT(DISTINCT bird_name) AS species_count,
-                   COUNT(DISTINCT report_no) AS report_count,
-                   COUNT(*) AS record_count,
-                   SUM(CASE WHEN bird_count IS NULL THEN 0 ELSE bird_count END) AS individual_count
-            FROM {source_table}
-            WHERE batch_no = %s
-            GROUP BY observation_location
-            ORDER BY species_count DESC, record_count DESC, location_name ASC
-        """.format(source_table=source_table), (batch_no,))
-        all_location_summaries = dict_rows(cur)
+        details = filter_bird_record_blacklist(dict_rows(cur))
+        # 黑名单变化后，导出中的地点统计也按过滤后的明细重新计算。
+        grouped = {}
+        for detail in details:
+            grouped.setdefault(detail.get("observation_location") or "", []).append(detail)
+        all_location_summaries = [
+            {
+                "location_name": location,
+                "species_count": len({item.get("bird_name") for item in rows if item.get("bird_name")}),
+                "report_count": len({item.get("report_no") for item in rows if item.get("report_no")}),
+                "record_count": len(rows),
+                "individual_count": sum(item.get("bird_count") or 0 for item in rows),
+            }
+            for location, rows in grouped.items() if location
+        ]
+        all_location_summaries.sort(key=lambda item: (-item["species_count"], -item["record_count"], item["location_name"]))
         cur.execute("""
             SELECT location_name, species_count, report_count, record_count,
                    individual_count, start_date, end_date, query_time
@@ -1584,6 +1617,25 @@ def get_latest_bird_batch_export_data(conn):
             ORDER BY d.observation_location ASC, d.bird_name ASC
         """.format(source_table=source_table), (batch_no,))
         bird_summaries = dict_rows(cur)
+        protected_groups = {}
+        for detail in details:
+            level = detail.get("protection_level") or detail.get("catalog_protection_level")
+            if level in ("Ⅰ级", "Ⅱ级") and detail.get("bird_name"):
+                protected_groups.setdefault((detail.get("observation_location"), detail.get("bird_name"), level), []).append(detail)
+        bird_summaries = [
+            {
+                "observation_location": key[0], "bird_name": key[1], "protection_level": key[2],
+                "record_count": len(rows),
+                "report_count": len({item.get("report_no") for item in rows if item.get("report_no")}),
+                "individual_count": sum(item.get("bird_count") or 0 for item in rows),
+            }
+            for key, rows in sorted(protected_groups.items())
+        ]
+        summary_stats = {row["location_name"]: row for row in all_location_summaries}
+        summaries = [
+            dict(row, **summary_stats[row["location_name"]])
+            for row in summaries if row.get("location_name") in summary_stats
+        ]
     return {
         "batch_no": batch_no,
         "source_table": source_table,
@@ -1599,7 +1651,7 @@ def get_memory_bird_batch_export_data(memory_batch):
         return None
     result = memory_batch.get("result") or {}
     batch_no = result.get("batchNo")
-    details = list(memory_batch.get("details") or [])
+    details = filter_bird_record_blacklist(list(memory_batch.get("details") or []))
     if not batch_no:
         return None
 
@@ -1722,6 +1774,31 @@ def build_bird_records_export_workbook(export_data):
         ("Top20地点汇总", top_location_rows),
         ("鸟种汇总", bird_rows),
     ])
+
+@app.route('/api/bird-records/blacklist', methods=['GET'])
+def api_bird_records_blacklist():
+    return jsonify({"users": get_bird_record_blacklist()})
+
+@app.route('/api/bird-records/blacklist', methods=['PUT'])
+def api_bird_records_blacklist_update():
+    data = request.get_json(silent=True) or {}
+    users = data.get("users", data.get("user", []))
+    if isinstance(users, str):
+        users = re.split(r"[,，\n]", users)
+    normalized = []
+    seen = set()
+    for value in users or []:
+        name = str(value or "").strip()
+        key = name.casefold()
+        if name and key not in seen:
+            seen.add(key)
+            normalized.append(name)
+    _manager.update({"bird_record_blacklist": normalized})
+    with _CACHE_LOCK:
+        for key in list(_CACHE):
+            if key.startswith(_BIRD_QUERY_CACHE_PREFIX):
+                _CACHE.pop(key, None)
+    return jsonify({"users": normalized, "message": "黑名单已更新，后续展示和 AI 查询将自动排除这些用户"})
 
 @app.route('/api/bird-records/locations', methods=['GET'])
 def api_bird_locations():
@@ -1852,7 +1929,7 @@ def api_bird_records_query_batch():
     try:
         if not _manager.db_enabled:
             global _LATEST_MEMORY_BATCH
-            all_details = fetch_birdreport_public_area_details(province, start_date, end_date, city)
+            all_details = filter_bird_record_blacklist(fetch_birdreport_public_area_details(province, start_date, end_date, city))
             annotate_bird_protection_levels(None, all_details)
             ranked_locations = group_bird_details_by_location(all_details)
             batch_no = generate_memory_batch_no()
@@ -1899,7 +1976,7 @@ def api_bird_records_query_batch():
         conn = get_db()
         query_time = datetime.now()
         batch_no = generate_bird_batch_no(conn, query_time)
-        all_details = fetch_birdreport_public_area_details(province, start_date, end_date, city)
+        all_details = filter_bird_record_blacklist(fetch_birdreport_public_area_details(province, start_date, end_date, city))
         annotate_bird_protection_levels(conn, all_details)
         source_saved = save_bird_source_details(conn, batch_no, region_name, start_date, end_date, query_time, all_details)
         ranked_locations = group_bird_details_by_location(all_details)
@@ -1954,7 +2031,21 @@ def api_bird_records_latest():
     if not _manager.db_enabled:
         if _LATEST_MEMORY_BATCH and _LATEST_MEMORY_BATCH["expires_at"] > time.monotonic():
             result = _LATEST_MEMORY_BATCH["result"]
-            return jsonify({"batchNo": result["batchNo"], "top20": result.get("saved", [])})
+            top20 = []
+            for entry in (_LATEST_MEMORY_BATCH.get("summaries") or {}).values():
+                details = filter_bird_record_blacklist(entry.get("details") or [])
+                if not details:
+                    continue
+                summary = dict(entry.get("summary") or {})
+                summary.update({
+                    "species_count": len({item.get("bird_name") for item in details if item.get("bird_name")}),
+                    "report_count": len({item.get("report_no") for item in details if item.get("report_no")}),
+                    "record_count": len(details),
+                    "individual_count": sum(item.get("bird_count") or 0 for item in details),
+                })
+                top20.append(summary)
+            top20.sort(key=lambda item: (-item.get("species_count", 0), -item.get("record_count", 0), item.get("location_name", "")))
+            return jsonify({"batchNo": result["batchNo"], "top20": top20[:20]})
         return jsonify({"batchNo": "", "top20": []})
     try:
         conn = get_db()
@@ -1974,6 +2065,28 @@ def api_bird_records_latest():
                 LIMIT 20
             """, (batch_no,))
             top20 = dict_rows(cur)
+            blocked = {name.casefold() for name in get_bird_record_blacklist()}
+            if blocked:
+                cur.execute("""
+                    SELECT summary_id, observation_location, bird_name, report_no, bird_count, record_user
+                    FROM bird_record_detail WHERE batch_no = %s
+                """, (batch_no,))
+                grouped = {}
+                for detail in dict_rows(cur):
+                    if str(detail.get("record_user") or "").strip().casefold() in blocked:
+                        continue
+                    grouped.setdefault(detail["summary_id"], []).append(detail)
+                filtered_top20 = []
+                for row in top20:
+                    details = grouped.get(row["id"], [])
+                    if not details:
+                        continue
+                    row["species_count"] = len({item.get("bird_name") for item in details if item.get("bird_name")})
+                    row["report_count"] = len({item.get("report_no") for item in details if item.get("report_no")})
+                    row["record_count"] = len(details)
+                    row["individual_count"] = sum(item.get("bird_count") or 0 for item in details)
+                    filtered_top20.append(row)
+                top20 = sorted(filtered_top20, key=lambda item: (-item["species_count"], -item["record_count"], item["id"]))[:20]
         conn.close()
         for row in top20:
             for key in ("start_date", "end_date", "query_time"):
@@ -2054,12 +2167,12 @@ def api_bird_records_summary_details(summary_id):
         memory_summary = (memory_batch or {}).get("summaries", {}).get(summary_id)
         if not memory_summary or memory_batch["expires_at"] <= time.monotonic():
             return jsonify({"error": "缓存中的汇总记录已过期，请重新查询"}), 404
-        details = [item for item in memory_summary["details"]
+        details = [item for item in filter_bird_record_blacklist(memory_summary["details"])
                    if item.get("protection_level") in ("Ⅰ级", "Ⅱ级")]
         if keyword:
             details = [item for item in details if keyword.lower() in item.get("bird_name", "").lower()]
         return jsonify({"summary": memory_summary["summary"], "details": details,
-                        "birdNames": memory_summary["birdNames"]})
+                        "birdNames": sorted({item.get("bird_name") for item in details if item.get("bird_name")})})
     try:
         conn = get_db()
         with conn.cursor() as cur:
@@ -2092,7 +2205,7 @@ def api_bird_records_summary_details(summary_id):
                 ORDER BY d.bird_name ASC, d.report_no ASC, d.id ASC
                 LIMIT 2000
             """, tuple(params))
-            details = dict_rows(cur)
+            details = filter_bird_record_blacklist(dict_rows(cur))
             cur.execute("""
                 SELECT DISTINCT bird_name
                 FROM bird_record_detail
@@ -2104,6 +2217,9 @@ def api_bird_records_summary_details(summary_id):
         for key in ("start_date", "end_date", "query_time"):
             if summary.get(key):
                 summary[key] = summary[key].isoformat() if hasattr(summary[key], "isoformat") else str(summary[key])
+        # fetchall() 已经在上面转换成了字符串列表，不能再次按下标取首字符。
+        # 否则“白鹭”会被错误返回为“白”，前端摘要就会出现逐字拆分的鸟名。
+        all_bird_names = [str(name).strip() for name in all_bird_names if str(name).strip()]
         return jsonify({"summary": summary, "details": details, "birdNames": all_bird_names})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2181,25 +2297,199 @@ def _deepseek_config():
     }
 
 
-def _ai_bird_records_tool(arguments):
+_AI_CITY_ALIASES = {
+    "广州市": ("广东省", "广州市"), "广州": ("广东省", "广州市"),
+    "深圳市": ("广东省", "深圳市"), "深圳": ("广东省", "深圳市"),
+    "杭州市": ("浙江省", "杭州市"), "杭州": ("浙江省", "杭州市"),
+    "青岛市": ("山东省", "青岛市"), "青岛": ("山东省", "青岛市"),
+    "南京市": ("江苏省", "南京市"), "南京": ("江苏省", "南京市"),
+    "成都市": ("四川省", "成都市"), "成都": ("四川省", "成都市"),
+    "武汉市": ("湖北省", "武汉市"), "武汉": ("湖北省", "武汉市"),
+    "西安市": ("陕西省", "西安市"), "西安": ("陕西省", "西安市"),
+    "厦门市": ("福建省", "厦门市"), "厦门": ("福建省", "厦门市"),
+    "北京市": ("北京市", ""), "北京": ("北京市", ""),
+    "上海市": ("上海市", ""), "上海": ("上海市", ""),
+    "天津市": ("天津市", ""), "天津": ("天津市", ""),
+    "重庆市": ("重庆市", ""), "重庆": ("重庆市", ""),
+}
+_AI_LANDMARK_ALIASES = {
+    "越秀公园": ("广东省", "广州市"),
+    "海珠湿地": ("广东省", "广州市"),
+    "白云山": ("广东省", "广州市"),
+}
+
+
+def _extract_ai_location(question):
+    """从原始问题提取明确城市，避免模型把偏好地点带入本次查询。"""
+    text = re.sub(r"\s+", "", str(question or ""))
+    for alias in sorted(_AI_LANDMARK_ALIASES, key=len, reverse=True):
+        if alias in text:
+            return _AI_LANDMARK_ALIASES[alias]
+    for alias in sorted(_AI_CITY_ALIASES, key=len, reverse=True):
+        if alias in text:
+            return _AI_CITY_ALIASES[alias]
+    province_aliases = {
+        "广东": "广东省", "浙江": "浙江省", "山东": "山东省", "江苏": "江苏省",
+        "四川": "四川省", "湖北": "湖北省", "福建": "福建省", "陕西": "陕西省",
+        "河北": "河北省", "河南": "河南省", "云南": "云南省", "海南": "海南省",
+    }
+    for alias, province in province_aliases.items():
+        if alias in text:
+            return province, ""
+    return "", ""
+
+
+def _extract_ai_landmark(question):
+    text = re.sub(r"\s+", "", str(question or ""))
+    for alias in sorted(_AI_LANDMARK_ALIASES, key=len, reverse=True):
+        if alias in text:
+            return alias
+    return ""
+
+
+def _requires_ai_bird_records(question):
+    value = re.sub(r"\s+", "", str(question or ""))
+    time_sensitive = re.search(r"最近|近期|今天|昨日|昨天|前天|这两天|这几天|近[一二三四五六七八九十\d]+天|本周|这周|本月|这个月|今年", value)
+    bird_context = re.search(r"鸟|观测|观察|记录|鸟讯|鸟况|值得看|能看到|去哪看|去哪里看", value)
+    live_question = re.search(r"有什么鸟|有哪些鸟|哪些鸟|哪里有鸟|哪里能看|去哪看鸟|去哪里看鸟|能看到什么|值得看什么|鸟讯|鸟况|观鸟记录|观察记录|观测记录|记录最多|鸟种最多|近期记录|最新记录", value)
+    return bool(live_question or (time_sensitive and bird_context))
+
+
+def _bird_ai_system_prompt(today):
+    return (
+        f"你是鸟友工具箱的专业观鸟助手。今天是 {today}。\n"
+        "【何时查数据】凡是询问近期/指定日期的鸟种、数量、地点、鸟况、鸟讯、哪里值得看或记录排行，必须先调用 "
+        "query_bird_records；不得凭常识补充本次查询中没有出现的鸟名或数量。纯鸟类知识、辨识方法、行为习性问题可以直接回答。\n"
+        "【地点】必须根据本次问题确定查询地点；用户没有说明地点时不要猜测，要求用户补充。城市必须尽量补全所属省份。\n"
+        "【日期优先级】先看本次问题，再结合历史对话补全省略的日期；如果明确说了‘今天’、‘昨天’、‘这两天’、最近N天、本周等范围，必须严格按该范围换算 YYYY-MM-DD；"
+        "只有整个对话都没有说明时间时，才使用程序默认的最近7天。\n"
+        "【回答原则】先给简短结论，再按地点或鸟种列出最有用的结果；明确实际查询日期、区域、地点数、记录数和数据来源。"
+        "‘有记录’不等于现在一定能看到，推荐时说明这是基于近期公开记录。零结果时说明实际条件并建议扩大日期或区域，不得猜测。"
+        "使用简洁中文和短列表，不堆砌标题，不使用宽表格。"
+    )
+
+
+def _chinese_number(value):
+    digits = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+              "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    text = str(value or "").strip()
+    if text.isdigit():
+        return int(text)
+    if text in digits:
+        return digits[text]
+    if len(text) == 2 and text[0] == "十" and text[1] in digits:
+        return 10 + digits[text[1]]
+    if len(text) == 2 and text[1] == "十" and text[0] in digits:
+        return digits[text[0]] * 10
+    return None
+
+
+def _extract_ai_date_range(question, today):
+    """从用户原话确定日期，优先级高于模型传回的日期参数。"""
+    text = re.sub(r"\s+", "", str(question or ""))
+    date_match = re.search(r"(20\d{2})[-年](\d{1,2})[-月](\d{1,2})日?(?:至|到|~|～|-)(20\d{2})?[-年]?(\d{1,2})[-月](\d{1,2})日?", text)
+    if date_match:
+        try:
+            start = datetime(int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3)))
+            end = datetime(int(date_match.group(4) or date_match.group(1)), int(date_match.group(5)), int(date_match.group(6)))
+            return start, end, "user"
+        except ValueError:
+            pass
+    single_date = re.search(r"(20\d{2})[-年](\d{1,2})[-月](\d{1,2})日?", text)
+    if single_date:
+        try:
+            day = datetime(int(single_date.group(1)), int(single_date.group(2)), int(single_date.group(3)))
+            return day, day, "user"
+        except ValueError:
+            pass
+    if re.search(r"今天", text):
+        return today, today, "user"
+    if re.search(r"昨天|昨日", text):
+        day = today - timedelta(days=1)
+        return day, day, "user"
+    if re.search(r"前天", text):
+        day = today - timedelta(days=2)
+        return day, day, "user"
+    match = re.search(r"(?:最近|近|过去|这)([一二两三四五六七八九十\d]+)天", text)
+    if match:
+        days = _chinese_number(match.group(1))
+        if days and days > 0:
+            return today - timedelta(days=days - 1), today, "user"
+    if "本周" in text or "这周" in text:
+        start = today - timedelta(days=today.weekday())
+        return start, today, "user"
+    if "本月" in text or "这个月" in text:
+        return today.replace(day=1), today, "user"
+    if "今年" in text:
+        return today.replace(month=1, day=1), today, "user"
+    return None
+
+
+def _render_ai_markdown(value):
+    """将 AI 回复转换为安全的 Markdown HTML，供桌面端对话气泡展示。"""
+    source = html_escape(str(value or ""), quote=False)
+    rendered = markdown.markdown(
+        source,
+        extensions=["fenced_code", "tables", "nl2br", "sane_lists"],
+    )
+    # Markdown 链接只允许常见安全协议；异常协议降级为不可点击链接。
+    rendered = re.sub(
+        r'(<a\s+[^>]*href=")([^"#]+)(")',
+        lambda match: match.group(1) + (
+            match.group(2)
+            if re.match(r"^(?:https?|mailto):", match.group(2), re.IGNORECASE)
+            else "#"
+        ) + match.group(3),
+        rendered,
+        flags=re.IGNORECASE,
+    )
+    rendered = re.sub(r'<a\s+', '<a target="_blank" rel="noopener noreferrer" ', rendered)
+    return rendered
+
+
+def _ai_bird_records_tool(arguments, question="", conversation_context=""):
     today = datetime.now()
-    default_start = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-    start_date = str(arguments.get("start_date") or default_start).strip()
-    end_date = str(arguments.get("end_date") or today.strftime("%Y-%m-%d")).strip()
-    province = str(arguments.get("province") or "北京市").strip()
-    city = str(arguments.get("city") or "").strip()
-    location_keyword = str(arguments.get("location_keyword") or "").strip()
+    # 当前问题优先；追问省略地点时，再从历史对话补全。
+    explicit_province, explicit_city = _extract_ai_location(question)
+    explicit_landmark = _extract_ai_landmark(question)
+    if not explicit_province and conversation_context:
+        explicit_province, explicit_city = _extract_ai_location(conversation_context)
+        explicit_landmark = _extract_ai_landmark(conversation_context)
+    explicit_question_location = bool(explicit_province)
+    if explicit_question_location:
+        province, city = explicit_province, explicit_city
+        district = str(arguments.get("district") or "").strip() if explicit_city else ""
+        location_keyword = explicit_landmark or str(arguments.get("location_keyword") or "").strip()
+    else:
+        province = str(arguments.get("province") or "").strip()
+        city = str(arguments.get("city") or "").strip()
+        district = str(arguments.get("district") or "").strip()
+        location_keyword = str(arguments.get("location_keyword") or "").strip()
+    # 日期同样优先当前问题；“那这两天呢”会从当前问题得到两天范围。
+    detected_dates = _extract_ai_date_range(question, today)
+    if not detected_dates and conversation_context:
+        detected_dates = _extract_ai_date_range(conversation_context, today)
+    if detected_dates:
+        start_day, end_day, date_source = detected_dates
+        start_date = start_day.strftime("%Y-%m-%d")
+        end_date = end_day.strftime("%Y-%m-%d")
+    else:
+        # 没有明确时间时固定使用最近 7 天；不采信模型可能误填的日期。
+        end_date = today.strftime("%Y-%m-%d")
+        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        date_source = "recent_7_days"
     validate_bird_dates(start_date, end_date)
     if not province:
-        raise ValueError("查询区域不能为空")
+        raise ValueError("未指定查询地点，请在问题中说明省份、城市、公园或其他地点")
 
-    details = fetch_birdreport_public_area_details(province, start_date, end_date, city)
+    details = filter_bird_record_blacklist(fetch_birdreport_public_area_details(province, start_date, end_date, city))
     levels = get_protected_wildlife_level({item.get("bird_name") for item in details})
     for item in details:
         item["protection_level"] = levels.get(item.get("bird_name"))
-    if location_keyword:
-        keyword = location_keyword.casefold()
-        details = [item for item in details if keyword in (item.get("observation_location") or "").casefold()]
+    for filter_value in (district, location_keyword):
+        if filter_value:
+            keyword = filter_value.casefold()
+            details = [item for item in details if keyword in (item.get("observation_location") or "").casefold()]
 
     grouped = group_bird_details_by_location(details)
     locations = []
@@ -2216,9 +2506,13 @@ def _ai_bird_records_tool(arguments):
         "query": {
             "province": province,
             "city": city,
+            "district": district,
             "location_keyword": location_keyword,
             "start_date": start_date,
             "end_date": end_date,
+            "location_source": "user",
+            "date_source": date_source,
+            "fixed_recent_days": 7 if date_source == "recent_7_days" else None,
         },
         "record_total": len(details),
         "location_total": len(grouped),
@@ -2227,7 +2521,7 @@ def _ai_bird_records_tool(arguments):
     }
 
 
-def _call_deepseek(messages):
+def _call_deepseek(messages, force_records_query=False):
     cfg = _deepseek_config()
     if not cfg["api_key"]:
         raise RuntimeError("尚未配置 DeepSeek API Key，请先在配置管理中填写")
@@ -2243,18 +2537,22 @@ def _call_deepseek(messages):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "start_date": {"type": "string", "description": "开始日期，格式 YYYY-MM-DD"},
-                        "end_date": {"type": "string", "description": "结束日期，格式 YYYY-MM-DD"},
-                        "province": {"type": "string", "description": "省或直辖市，例如 北京市"},
-                        "city": {"type": "string", "description": "城市，例如 青岛市；直辖市可留空"},
+                        "location_source": {"type": "string", "enum": ["user"], "description": "始终使用本次问题中的地点"},
+                        "date_source": {"type": "string", "enum": ["user", "recent_7_days"], "description": "仅作记录，程序会根据用户原话最终确定日期"},
+                        "start_date": {"type": "string", "description": "可填写 YYYY-MM-DD，但程序优先解析用户原话"},
+                        "end_date": {"type": "string", "description": "可填写 YYYY-MM-DD，但程序优先解析用户原话"},
+                        "province": {"type": "string", "description": "本次查询省或直辖市"},
+                        "city": {"type": "string", "description": "本次查询城市；直辖市可留空"},
+                        "district": {"type": "string", "description": "用户说了区县时填写，否则留空"},
                         "location_keyword": {"type": "string", "description": "地点关键词，例如 天坛；没有地点限制时留空"},
                     },
-                    "required": ["start_date", "end_date", "province"],
+                    "required": ["location_source", "date_source", "start_date", "end_date", "province", "city", "district", "location_keyword"],
                     "additionalProperties": False,
                 },
             },
         }],
-        "tool_choice": "auto",
+        "tool_choice": ({"type": "function", "function": {"name": "query_bird_records"}}
+                        if force_records_query else "auto"),
     }
     response = None
     retryable_statuses = {429, 500, 502, 503, 504}
@@ -2315,35 +2613,44 @@ def api_ai_bird_chat():
     for item in (data.get("messages") or [])[-10:]:
         if isinstance(item, dict) and item.get("role") in ("user", "assistant") and item.get("content"):
             history.append({"role": item["role"], "content": str(item["content"])[:4000]})
+    conversation_context = "\n".join(item["content"] for item in history)
     today = datetime.now().strftime("%Y-%m-%d")
     messages = [{
         "role": "system",
-        "content": (
-            f"你是鸟友工具箱的观鸟助手。今天是 {today}。"
-            "涉及具体鸟种、数量、地点或日期时，必须调用 query_bird_records 获取真实数据，不能凭常识猜测。"
-            "请用中文简洁总结，明确说明查询日期、区域、地点匹配和记录数量；没有结果时明确说明。"
-            "不要虚构鸟名、数量或观察结论。"
-        ),
+        "content": _bird_ai_system_prompt(today),
     }]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
     try:
         tool_result = None
+        records_required = (
+            _requires_ai_bird_records(user_message)
+            or _requires_ai_bird_records(conversation_context)
+        )
+        tool_attempted = False
         for _ in range(3):
-            result = _call_deepseek(messages)
+            result = _call_deepseek(messages, force_records_query=records_required and tool_result is None and not tool_attempted)
             choice = (result.get("choices") or [{}])[0]
             assistant_message = choice.get("message") or {}
             tool_calls = assistant_message.get("tool_calls") or []
             if not tool_calls:
-                return jsonify({"answer": assistant_message.get("content") or "DeepSeek 没有返回文字答案。", "tool_result": tool_result})
+                if records_required and tool_result is None:
+                    return jsonify({"error": "此问题需要查询真实记录，但未能完成查询；请在问题中明确地点和时间范围"}), 400
+                answer = assistant_message.get("content") or "DeepSeek 没有返回文字答案。"
+                return jsonify({
+                    "answer": answer,
+                    "answer_html": _render_ai_markdown(answer),
+                    "tool_result": tool_result,
+                })
             messages.append(assistant_message)
             for tool_call in tool_calls:
                 function = tool_call.get("function") or {}
                 if function.get("name") != "query_bird_records":
                     continue
                 try:
+                    tool_attempted = True
                     arguments = json.loads(function.get("arguments") or "{}")
-                    tool_result = _ai_bird_records_tool(arguments)
+                    tool_result = _ai_bird_records_tool(arguments, user_message, conversation_context)
                     tool_content = json.dumps(tool_result, ensure_ascii=False)
                 except (ValueError, TypeError) as exc:
                     tool_content = json.dumps({"error": str(exc)}, ensure_ascii=False)

@@ -2,8 +2,8 @@
 <resources>
     <style name="Theme.AiBirding" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#123F37</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#7EBEC0</item>
         <item name="android:navigationBarColor">#F3F7F5</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">#17705E</item>

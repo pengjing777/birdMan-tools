@@ -72,6 +72,7 @@ _DEFAULTS = {
         "base_url": "https://api.deepseek.com",
         "timeout": 90,
     },
+    "bird_record_blacklist": [],
     "service_vue_frontend": {
         "project_path": "/Users/wangpengjing/sbyProject/tax_pay_ext/bossmgr-new-console",
         "command": "pnpm dev",
@@ -127,7 +128,7 @@ _DEFAULTS = {
             },
         ],
     },
-    "home_tool_order": ["config-manager", "bird-records", "ai-bird-chat", "bird-navigation"],
+    "home_tool_order": ["config-manager", "bird-records", "ai-bird-chat", "photo-classify", "bird-navigation"],
 }
 
 
