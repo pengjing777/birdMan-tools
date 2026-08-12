@@ -3,6 +3,10 @@ package com.birdstools.android;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.content.Intent;
+import android.net.Uri;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.security.keystore.KeyGenParameterSpec;
@@ -47,6 +51,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import android.util.Base64;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -56,9 +61,11 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public class MainActivity extends Activity {
+    private static final int IMAGE_PICK_REQUEST = 4201;
     private static final String PREFS = "ai_bird_chat";
     private static final String KEY_ALIAS = "birds_tools_deepseek_key";
     private static final String API_URL = "https://api.deepseek.com/chat/completions";
+    private static final String ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
     private static final String BIRDREPORT_API = "https://api.birdreport.cn/";
     private static final String BIRDREPORT_PUBLIC_KEY =
             "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCvxXa98E1uWXnBzXkS2yHUfnBM6n3PCwLdfIox03T91joBvjtoDqiQ5x3t"
@@ -73,6 +80,7 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Map<String, String> birdreportCookies = new LinkedHashMap<>();
     private WebView webView;
+    private String pendingImageData = "";
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -109,6 +117,40 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    private void pickImage() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, IMAGE_PICK_REQUEST);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != IMAGE_PICK_REQUEST) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            pendingImageData = "";
+            try { callback("onImageSelected", new JSONObject().put("ok", false).put("error", "已取消选择图片")); } catch (Exception ignored) { }
+            return;
+        }
+        try {
+            Uri uri = data.getData();
+            InputStream input = getContentResolver().openInputStream(uri);
+            Bitmap bitmap = BitmapFactory.decodeStream(input);
+            if (input != null) input.close();
+            if (bitmap == null) throw new Exception("无法读取图片");
+            int max = 1280;
+            float scale = Math.min(1f, max / (float) Math.max(bitmap.getWidth(), bitmap.getHeight()));
+            if (scale < 1f) bitmap = Bitmap.createScaledBitmap(bitmap, Math.round(bitmap.getWidth() * scale), Math.round(bitmap.getHeight() * scale), true);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 82, out);
+            pendingImageData = "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            callback("onImageSelected", new JSONObject().put("ok", true));
+        } catch (Exception error) {
+            try { callback("onImageSelected", new JSONObject().put("ok", false).put("error", error.getMessage())); } catch (Exception ignored) { }
+        }
+    }
+
     private SharedPreferences prefs() {
         return getSharedPreferences(PREFS, MODE_PRIVATE);
     }
@@ -133,19 +175,29 @@ public class MainActivity extends Activity {
     }
 
     private void saveApiKey(String value) throws Exception {
+        saveApiKey("deepseek", value);
+    }
+
+    private void saveApiKey(String provider, String value) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, getSecretKey());
+        String prefix = "zhipu".equals(provider) ? "zhipu_" : "";
         prefs().edit()
-                .putString("key", android.util.Base64.encodeToString(
+                .putString(prefix + "key", android.util.Base64.encodeToString(
                         cipher.doFinal(value.getBytes(StandardCharsets.UTF_8)), android.util.Base64.NO_WRAP))
-                .putString("iv", android.util.Base64.encodeToString(
+                .putString(prefix + "iv", android.util.Base64.encodeToString(
                         cipher.getIV(), android.util.Base64.NO_WRAP))
                 .apply();
     }
 
     private String apiKey() {
-        String encrypted = prefs().getString("key", "");
-        String iv = prefs().getString("iv", "");
+        return apiKeyFor("deepseek");
+    }
+
+    private String apiKeyFor(String provider) {
+        String prefix = "zhipu".equals(provider) ? "zhipu_" : "";
+        String encrypted = prefs().getString(prefix + "key", "");
+        String iv = prefs().getString(prefix + "iv", "");
         if (encrypted.isEmpty() || iv.isEmpty()) return "";
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
@@ -154,10 +206,13 @@ public class MainActivity extends Activity {
             return new String(cipher.doFinal(android.util.Base64.decode(
                     encrypted, android.util.Base64.NO_WRAP)), StandardCharsets.UTF_8);
         } catch (Exception ignored) {
-            prefs().edit().remove("key").remove("iv").apply();
+            prefs().edit().remove(prefix + "key").remove(prefix + "iv").apply();
             return "";
         }
     }
+
+    private String modelProvider() { return prefs().getString("model_provider", "deepseek"); }
+    private boolean activeModelHasKey() { return !apiKeyFor(modelProvider()).isEmpty(); }
 
     private JSONArray history() {
         try {
@@ -223,7 +278,10 @@ public class MainActivity extends Activity {
         prefs().edit().putString("history", trimmed.toString()).apply();
     }
 
-    private QueryTrace requestDeepSeek(String question) throws Exception {
+    private QueryTrace requestDeepSeek(String question) throws Exception { return requestDeepSeek(question, ""); }
+
+    private QueryTrace requestDeepSeek(String question, String imageData) throws Exception {
+        if ("zhipu".equals(modelProvider())) return requestZhipu(question, imageData);
         if (apiKey().isEmpty()) throw new Exception("请先设置 DeepSeek API Key");
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().getTime());
         JSONObject preferences = birdPreferences();
@@ -245,7 +303,14 @@ public class MainActivity extends Activity {
             messages.put(new JSONObject().put("role", "user").put("content", item.optString("question")));
             messages.put(new JSONObject().put("role", "assistant").put("content", item.optString("answer")));
         }
-        messages.put(new JSONObject().put("role", "user").put("content", question));
+        JSONObject userMessage = new JSONObject().put("role", "user");
+        if (imageData != null && imageData.startsWith("data:image/")) {
+            JSONArray content = new JSONArray();
+            content.put(new JSONObject().put("type", "text").put("text", question));
+            content.put(new JSONObject().put("type", "image_url").put("image_url", new JSONObject().put("url", imageData)));
+            userMessage.put("content", content);
+        } else userMessage.put("content", question);
+        messages.put(userMessage);
 
         boolean queried = false;
         String querySummary = "";
@@ -282,6 +347,22 @@ public class MainActivity extends Activity {
             }
         }
         throw new Exception("DeepSeek 多次查询后仍未完成回答");
+    }
+
+    private QueryTrace requestZhipu(String question, String imageData) throws Exception {
+        if (apiKeyFor("zhipu").isEmpty()) throw new Exception("请先设置智谱 API Key");
+        JSONArray content = new JSONArray();
+        if (imageData != null && imageData.startsWith("data:image/"))
+            content.put(new JSONObject().put("type", "image_url").put("image_url", new JSONObject().put("url", imageData)));
+        content.put(new JSONObject().put("type", "text").put("text", question.isEmpty() ? "请识别这张鸟类照片，并说明判断依据。" : question));
+        JSONArray messages = new JSONArray().put(new JSONObject().put("role", "user").put("content", content));
+        JSONObject body = new JSONObject().put("model", "glm-5v-turbo").put("messages", messages)
+                .put("thinking", new JSONObject().put("type", "enabled"));
+        JSONObject response = postModel(body, ZHIPU_API_URL, "zhipu");
+        JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
+        String answer = message.optString("content").trim();
+        if (answer.isEmpty()) throw new Exception("智谱没有返回回答");
+        return new QueryTrace(answer, false, "", new JSONArray());
     }
 
     private JSONObject callDeepSeek(JSONArray messages, boolean forceRecordsQuery) throws Exception {
@@ -382,11 +463,15 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject postDeepSeek(JSONObject body) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(API_URL).openConnection();
+        return postModel(body, API_URL, "deepseek");
+    }
+
+    private JSONObject postModel(JSONObject body, String endpoint, String provider) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(60000);
-        connection.setRequestProperty("Authorization", "Bearer " + apiKey());
+        connection.setRequestProperty("Authorization", "Bearer " + apiKeyFor(provider));
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         connection.setRequestProperty("Accept", "application/json");
         connection.setDoOutput(true);
@@ -404,9 +489,9 @@ public class MainActivity extends Activity {
                     if (error != null) message = error.optString("message");
                 } catch (Exception ignored) { }
                 if (code == 401 || code == 403) throw new Exception("API Key 无效，请重新设置");
-                if (code == 402) throw new Exception("DeepSeek 账户余额不足");
-                if (code == 429) throw new Exception("DeepSeek 请求过于频繁，请稍后再试");
-                throw new Exception(message.isEmpty() ? "DeepSeek 服务异常（" + code + "）" : message);
+                if (code == 402) throw new Exception(provider.equals("zhipu") ? "智谱账户余额不足" : "DeepSeek 账户余额不足");
+                if (code == 429) throw new Exception("请求过于频繁，请稍后再试");
+                throw new Exception(message.isEmpty() ? "模型服务异常（" + code + "）" : message);
             }
             return new JSONObject(response);
         } finally {
@@ -2145,7 +2230,7 @@ public class MainActivity extends Activity {
     public class NativeBridge {
         @JavascriptInterface
         public boolean hasKey() {
-            return !apiKey().isEmpty();
+            return activeModelHasKey();
         }
 
         @JavascriptInterface
@@ -2153,7 +2238,7 @@ public class MainActivity extends Activity {
             String value = raw == null ? "" : raw.trim();
             if (value.length() < 8) return "请输入有效的 DeepSeek API Key";
             try {
-                saveApiKey(value);
+                saveApiKey(modelProvider(), value);
                 return "";
             } catch (Exception ignored) {
                 return "Key 保存失败，请重试";
@@ -2182,8 +2267,25 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void resetKey() {
-            prefs().edit().remove("key").remove("iv").apply();
+            String prefix = "zhipu".equals(modelProvider()) ? "zhipu_" : "";
+            prefs().edit().remove(prefix + "key").remove(prefix + "iv").apply();
         }
+
+        @JavascriptInterface
+        public String modelProvider() { return MainActivity.this.modelProvider(); }
+
+        @JavascriptInterface
+        public String switchModel(String provider) {
+            String value = "zhipu".equals(provider) ? "zhipu" : "deepseek";
+            prefs().edit().putString("model_provider", value).apply();
+            return value;
+        }
+
+        @JavascriptInterface
+        public void pickImage() { MainActivity.this.pickImage(); }
+
+        @JavascriptInterface
+        public void clearImage() { pendingImageData = ""; }
 
         @JavascriptInterface
         public void loadCaptcha() {
@@ -2220,7 +2322,9 @@ public class MainActivity extends Activity {
                 JSONObject result = new JSONObject();
                 try {
                     if (question.isEmpty()) throw new Exception("请输入你想了解的鸟类问题");
-                    QueryTrace trace = requestDeepSeek(question);
+                    String image = pendingImageData;
+                    pendingImageData = "";
+                    QueryTrace trace = requestDeepSeek(question, image);
                     saveExchange(question, trace.answer, trace);
                     result.put("ok", true).put("answer", trace.answer)
                             .put("recordsQueried", trace.queried)
