@@ -129,6 +129,7 @@ _DEFAULTS = {
         ],
     },
     "home_tool_order": ["config-manager", "bird-records", "ai-bird-chat", "photo-classify", "bird-navigation"],
+    "home_tool_enabled": {"photo-classify": False},
 }
 
 

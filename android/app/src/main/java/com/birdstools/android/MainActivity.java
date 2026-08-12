@@ -513,7 +513,10 @@ public class MainActivity extends Activity {
             for (String birdName : sortedBirds) {
                 String level = birdLevels.get(birdName);
                 if (protectionRank(level) > 0) protectedCount++;
-                birdDetails.put(new JSONObject().put("name", birdName).put("protection_level", level));
+                String lowerName = birdName.toLowerCase(Locale.ROOT);
+                boolean uncertain = birdName.contains("?") || birdName.contains("？") || birdName.contains("疑似") || birdName.contains("待定")
+                        || lowerName.contains("sp.") || lowerName.contains(" cf");
+                birdDetails.put(new JSONObject().put("name", birdName).put("protection_level", level).put("uncertain", uncertain));
             }
             locations.add(new JSONObject()
                     .put("location", entry.getKey())

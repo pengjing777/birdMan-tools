@@ -192,15 +192,16 @@ def index():
 def get_ordered_tools():
     tool_map = {tool["id"]: tool for tool in TOOLS}
     configured_order = _manager.get_all().get("home_tool_order", [])
+    enabled = _manager.get_all().get("home_tool_enabled") or {}
     ordered = []
     seen = set()
     for tool_id in configured_order:
         tool = tool_map.get(tool_id)
-        if tool and tool_id not in seen:
+        if tool and tool_id not in seen and enabled.get(tool_id, tool_id != "photo-classify") is not False:
             ordered.append(tool)
             seen.add(tool_id)
     for tool in TOOLS:
-        if tool["id"] not in seen:
+        if tool["id"] not in seen and enabled.get(tool["id"], tool["id"] != "photo-classify") is not False:
             ordered.append(tool)
     return ordered
 
@@ -1130,6 +1131,11 @@ def normalize_bird_detail(record, fallback_location):
     record_user = str(record.get("username") or "").strip()
     if not report_no or not bird_name:
         return None
+    uncertainty_value = record.get("taxon_uncertain")
+    if uncertainty_value is None:
+        uncertainty_value = record.get("uncertain", record.get("is_uncertain"))
+    uncertain_text = bird_name.casefold()
+    bird_uncertain = bool(uncertainty_value) or any(marker in uncertain_text for marker in ("?", "？", "疑似", "待定", "sp.", " cf.", " cf"))
     start_time = str(record.get("start_time") or "").strip()
     end_time = str(record.get("end_time") or "").strip()
     if start_time and end_time:
@@ -1140,6 +1146,7 @@ def normalize_bird_detail(record, fallback_location):
         "report_no": report_no,
         "observation_location": join_bird_location(record, fallback_location),
         "bird_name": bird_name,
+        "bird_uncertain": bird_uncertain,
         "bird_count": parse_bird_count(record.get("taxon_count") or record.get("taxoncount")),
         "record_user": record_user,
         "observation_time": observation_time,
@@ -2493,15 +2500,27 @@ def _ai_bird_records_tool(arguments, question="", conversation_context=""):
 
     grouped = group_bird_details_by_location(details)
     locations = []
-    for item in grouped[:20]:
+    for item in grouped:
         item_details = item["details"]
+        bird_names = sorted(
+            {d.get("bird_name") for d in item_details if d.get("bird_name")},
+            key=lambda name: (0 if levels.get(name) == "Ⅰ级" else 1 if levels.get(name) == "Ⅱ级" else 2, name),
+        )
+        bird_details = []
+        for name in bird_names:
+            matching = next((d for d in item_details if d.get("bird_name") == name), {})
+            bird_details.append({"name": name, "protection_level": levels.get(name) or "", "uncertain": bool(matching.get("bird_uncertain"))})
         locations.append({
             "location": item["location"],
             "species_count": item["species_count"],
             "record_count": item["record_count"],
             "report_count": item["report_count"],
-            "bird_names": sorted({d.get("bird_name") for d in item_details if d.get("bird_name")}),
+            "protected_count": sum(1 for name in bird_names if levels.get(name) in ("Ⅰ级", "Ⅱ级")),
+            "bird_names": bird_names,
+            "bird_details": bird_details,
         })
+    locations.sort(key=lambda item: (-item["protected_count"], -item["species_count"], -item["record_count"], item["location"]))
+    locations = locations[:20]
     return {
         "query": {
             "province": province,
@@ -2641,6 +2660,15 @@ def api_ai_bird_chat():
                     "answer": answer,
                     "answer_html": _render_ai_markdown(answer),
                     "tool_result": tool_result,
+                    "records_queried": bool(tool_result),
+                    "query_summary": (
+                        f"{tool_result.get('query', {}).get('start_date', '')} 至 "
+                        f"{tool_result.get('query', {}).get('end_date', '')} · "
+                        f"{tool_result.get('query', {}).get('province', '')}"
+                        f"{tool_result.get('query', {}).get('city', '')} · "
+                        f"{tool_result.get('record_total', 0)} 条记录"
+                    ) if tool_result else "",
+                    "location_details": (tool_result or {}).get("locations", []),
                 })
             messages.append(assistant_message)
             for tool_call in tool_calls:

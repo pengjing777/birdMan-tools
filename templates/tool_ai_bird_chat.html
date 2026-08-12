@@ -45,6 +45,16 @@
     .suggestions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .suggestions button { border: 1px solid #bfdbfe; color: #1d4ed8; background: #eff6ff; border-radius: 999px; padding: 7px 11px; cursor: pointer; }
     .tool-note { margin-top: 12px; color: var(--text-muted); font-size: .8rem; }
+    .query-trace { align-self: flex-start; max-width: 94%; color: #0f766e; font-size: .78rem; }
+    .detail-toggle { align-self: flex-start; border: 1px solid #bfdbfe; color: #1d4ed8; background: #eff6ff; border-radius: 7px; padding: 7px 10px; cursor: pointer; font-weight: 650; }
+    .location-detail { align-self: flex-start; width: min(94%, 850px); padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background:#fff; }
+    .location-detail[hidden] { display:none; }
+    .location-detail table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:.82rem; }
+    .location-detail th, .location-detail td { padding:8px; border-bottom:1px solid var(--border-color); text-align:left; vertical-align:top; overflow-wrap:anywhere; }
+    .location-detail th { background:#f1f5f9; }
+    .protection-badge { display:inline-block; margin-right:3px; padding:1px 5px; border-radius:5px; font-size:.72rem; font-weight:750; }
+    .level-1 { color:#991b1b; background:#fee2e2; } .level-2 { color:#854d0e; background:#fef3c7; }
+    .uncertain-badge { display:inline-block; margin-right:3px; padding:1px 5px; border-radius:5px; font-size:.72rem; font-weight:750; color:#92400e; background:#ffedd5; }
     .captcha-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,23,42,.45); }
     .captcha-modal[hidden] { display: none; }
     .captcha-dialog { width: min(420px, 100%); background: #fff; border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 20px 45px rgba(15,23,42,.22); overflow: hidden; }
@@ -58,6 +68,15 @@
     .captcha-hint { color: var(--text-muted); }
     .captcha-error { min-height: 20px; color: #b91c1c; }
     .icon-button { width: 32px; height: 32px; border: 1px solid var(--border-color); border-radius: 6px; background: #fff; color: var(--text-muted); cursor: pointer; }
+    .key-modal { position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.45); }
+    .key-modal[hidden] { display:none; } .key-dialog { width:min(460px,100%); background:#fff; border:1px solid var(--border-color); border-radius:10px; padding:20px; box-shadow:0 20px 45px rgba(15,23,42,.22); }
+    .key-dialog h2 { margin:0 0 8px; font-size:1.1rem; } .key-dialog p { margin:0 0 14px; color:var(--text-muted); font-size:.84rem; line-height:1.6; }
+    .key-dialog input { width:100%; box-sizing:border-box; padding:10px 11px; border:1px solid var(--border-color); border-radius:7px; font:inherit; }
+    .key-error { min-height:20px; margin-top:7px; color:#b91c1c; font-size:.82rem; } .key-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+    .preference-bar { display:flex; align-items:center; gap:8px; margin:0 0 12px; color:var(--text-muted); font-size:.84rem; }
+    .preference-bar input { width:150px; padding:8px 10px; border:1px solid var(--border-color); border-radius:7px; font:inherit; }
+    .preference-bar button { padding:8px 12px; border:1px solid #bfdbfe; border-radius:7px; background:#eff6ff; color:#1d4ed8; cursor:pointer; font-weight:650; }
+    .preference-saved { color:#15803d; }
 </style>
 {% endblock %}
 
@@ -67,9 +86,10 @@
         <h1><i class="fas fa-comments" style="color:#2563eb;"></i> AI 观鸟问答</h1>
         <p>DeepSeek 会自动调用鸟种记录查询，再根据真实公开记录回答。</p>
     </div>
+    <div class="preference-bar"><span>偏好城市</span><input id="preferenceCity" value="北京" maxlength="30" placeholder="例如：北京"><button onclick="savePreferenceCity()">保存</button><span id="preferenceSaved" class="preference-saved"></span></div>
     <div class="chat-card">
         <div id="messages" class="messages">
-            <div class="msg assistant">你好！我可以查询指定地点的近期鸟种记录。例如：这两天北京天坛有什么鸟？</div>
+            <div class="msg assistant" id="welcomeMessage">你好！我可以查询指定地点的近期鸟种记录。例如：这两天北京天坛有什么鸟？</div>
         </div>
         <div class="composer">
             <textarea id="question" placeholder="输入你的观鸟问题，例如：这两天北京天坛有什么鸟？" onkeydown="handleKey(event)"></textarea>
@@ -78,12 +98,19 @@
     </div>
     {% set suggestion_place = '广州' %}
     <div class="suggestions">
-        <button onclick="ask({{ (suggestion_place ~ '最近两天有什么值得看的鸟？')|tojson }})">{{ suggestion_place }}最近两天有什么值得看的鸟</button>
-        <button onclick="ask({{ (suggestion_place ~ '哪里适合观鸟，近期记录比较多？')|tojson }})">{{ suggestion_place }}哪里适合观鸟</button>
-        <button onclick="ask({{ ('最近7天' ~ suggestion_place ~ '哪里记录的鸟种最多？')|tojson }})">最近7天{{ suggestion_place }}鸟种排行</button>
+        <button id="suggestion1" onclick="ask(currentCity() + '最近两天有什么值得看的鸟？')">{{ suggestion_place }}最近两天有什么值得看的鸟</button>
+        <button id="suggestion2" onclick="ask(currentCity() + '哪里适合观鸟，近期记录比较多？')">{{ suggestion_place }}哪里适合观鸟</button>
+        <button id="suggestion3" onclick="ask('最近7天' + currentCity() + '哪里记录的鸟种最多？')">最近7天{{ suggestion_place }}鸟种排行</button>
     </div>
     <div class="tool-note">提示：请在问题中说明地点和时间范围；未说明时间时默认查询最近 7 天。首次使用前请在“配置管理”中填写 DeepSeek API Key。</div>
 </div>
+<div id="keyModal" class="key-modal" hidden><div class="key-dialog">
+    <h2><i class="fas fa-key" style="color:#2563eb;"></i> 设置 DeepSeek API Key</h2>
+    <p>首次使用 AI 观鸟需要 DeepSeek API Key。Key 只保存在本机配置中。</p>
+    <input id="deepseekKeyInput" type="password" placeholder="sk-..." autocomplete="off" onkeydown="handleKeyInput(event)">
+    <div id="keyError" class="key-error"></div>
+    <div class="key-actions"><button class="btn btn-outline" onclick="closeKeyDialog()">取消</button><button id="keySaveButton" class="btn btn-primary" onclick="saveDeepseekKey()">保存并继续</button></div>
+</div></div>
 <div id="captchaModal" class="captcha-modal" hidden>
     <div class="captcha-dialog">
         <div class="captcha-head">
@@ -110,6 +137,15 @@
     const questionEl = document.getElementById('question');
     const sendButton = document.getElementById('sendButton');
     let pendingQuestion = '';
+    let deepseekKey = '';
+    let keyDialogRequired = false;
+    const preferenceCityEl = document.getElementById('preferenceCity');
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function(char) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];
+        });
+    }
 
     function appendMessage(role, text, isMarkdown = false) {
         const el = document.createElement('div');
@@ -125,13 +161,68 @@
         messagesEl.appendChild(el);
         messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+    function appendRecordDetails(data) {
+        if (!data.records_queried) return;
+        const trace = document.createElement('div');
+        trace.className = 'query-trace';
+        trace.textContent = '✓ 已查询记录中心 · ' + (data.query_summary || '真实公开数据');
+        messagesEl.appendChild(trace);
+        const locations = Array.isArray(data.location_details) ? data.location_details.slice(0, 5) : [];
+        const hiddenCommon = new Set(['喜鹊','乌鸦','夜鹭','苍鹭','黑水鸡','白骨顶','麻雀','白头鹎']);
+        const rows = locations.map(function(location) {
+            const birds = (Array.isArray(location.bird_details) && location.bird_details.length
+                ? location.bird_details : (location.bird_names || []).map(name => ({name:name, protection_level:''})))
+                .filter(bird => !hiddenCommon.has(String(bird.name || '').trim()));
+            if (!birds.length) return '';
+            const birdHtml = birds.map(function(bird) {
+                const level = bird.protection_level || '';
+                const badge = level ? '<span class="protection-badge ' + (level === 'Ⅰ级' ? 'level-1' : 'level-2') + '">' + escapeHtml(level) + '</span>' : '';
+                const uncertain = bird.uncertain ? '<span class="uncertain-badge">疑问</span>' : '';
+                return uncertain + badge + escapeHtml(bird.name || '-');
+            }).join('、');
+            return '<tr><td>' + escapeHtml(location.location || '-') + '</td><td>' + birdHtml + '</td></tr>';
+        }).filter(Boolean).join('');
+        if (!rows) return;
+        const id = 'ai-detail-' + Date.now();
+        const button = document.createElement('button');
+        button.className = 'detail-toggle'; button.textContent = '查看前五地点详情';
+        const panel = document.createElement('div'); panel.className = 'location-detail'; panel.id = id; panel.hidden = true;
+        panel.innerHTML = '<table><thead><tr><th style="width:34%">地点</th><th>鸟种（汇总）</th></tr></thead><tbody>' + rows + '</tbody></table>';
+        button.onclick = function() { panel.hidden = !panel.hidden; button.textContent = panel.hidden ? '查看前五地点详情' : '收回详情'; };
+        messagesEl.appendChild(button); messagesEl.appendChild(panel); messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
     function ask(text) { questionEl.value = text; sendMessage(); }
+    function currentCity() { return (preferenceCityEl.value || '北京').trim() || '北京'; }
+    function applyPreferenceCity() {
+        const city = currentCity();
+        document.getElementById('suggestion1').textContent = city + '最近两天有什么值得看的鸟';
+        document.getElementById('suggestion2').textContent = city + '哪里适合观鸟';
+        document.getElementById('suggestion3').textContent = '最近7天' + city + '鸟种排行';
+        document.getElementById('welcomeMessage').textContent = '你好！我可以查询指定地点的近期鸟种记录。例如：这两天' + city + '有什么鸟？';
+        questionEl.placeholder = '输入你的观鸟问题，例如：这两天' + city + '有什么鸟？';
+    }
+    function savePreferenceCity() {
+        const city = currentCity(); preferenceCityEl.value = city; localStorage.setItem('bird_tools_preference_city', city); applyPreferenceCity();
+        const saved = document.getElementById('preferenceSaved'); saved.textContent = '已保存'; setTimeout(() => saved.textContent = '', 1600);
+    }
+    (function loadPreferenceCity() { const saved = localStorage.getItem('bird_tools_preference_city'); if (saved && saved.trim()) preferenceCityEl.value = saved.trim(); applyPreferenceCity(); }());
+    async function loadDeepseekConfig() { try { const response = await fetch('/api/config'); const cfg = await response.json(); deepseekKey = (cfg.deepseek || {}).api_key || ''; } catch (error) { deepseekKey = ''; } }
+    function openKeyDialog(required) { keyDialogRequired = Boolean(required); document.getElementById('keyModal').hidden = false; document.getElementById('keyError').textContent = ''; document.getElementById('deepseekKeyInput').value = ''; setTimeout(() => document.getElementById('deepseekKeyInput').focus(), 50); }
+    function closeKeyDialog() { keyDialogRequired = false; document.getElementById('keyModal').hidden = true; }
+    async function saveDeepseekKey() {
+        const input = document.getElementById('deepseekKeyInput'); const key = input.value.trim(); if (!key) { document.getElementById('keyError').textContent = '请输入 DeepSeek API Key'; input.focus(); return; }
+        const button = document.getElementById('keySaveButton'); button.disabled = true;
+        try { const response = await fetch('/api/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({deepseek:{api_key:key}})}); const data = await response.json(); if (!response.ok) throw new Error(data.error || '保存失败'); deepseekKey = key; keyDialogRequired = false; document.getElementById('keyModal').hidden = true; }
+        catch (error) { document.getElementById('keyError').textContent = error.message; } finally { button.disabled = false; }
+    }
+    function handleKeyInput(event) { if (event.key === 'Enter') { event.preventDefault(); saveDeepseekKey(); } }
     function handleKey(event) {
         if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
     }
     async function sendMessage(retryMessage) {
         const message = (retryMessage || questionEl.value).trim();
         if (!message || sendButton.disabled) return;
+        if (!deepseekKey) { openKeyDialog(true); return; }
         if (!retryMessage) {
             appendMessage('user', message);
             questionEl.value = '';
@@ -151,6 +242,7 @@
             }
             if (!response.ok) throw new Error(data.error || '请求失败');
             appendMessage('assistant', data.answer_html || data.answer || '没有返回答案', Boolean(data.answer_html));
+            appendRecordDetails(data);
             chatHistory.push({role: 'user', content: message}, {role: 'assistant', content: data.answer || ''});
             while (chatHistory.length > 10) chatHistory.shift();
         } catch (error) {
@@ -203,5 +295,6 @@
         }
     }
     function handleCaptchaKey(event) { if (event.key === 'Enter') { event.preventDefault(); submitCaptcha(); } }
+    loadDeepseekConfig().then(() => { if (!deepseekKey) openKeyDialog(true); });
 </script>
 {% endblock %}

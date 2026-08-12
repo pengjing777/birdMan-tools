@@ -218,6 +218,16 @@
             </div>
         </div>
 
+        <div class="config-section">
+            <div class="config-section-title"><i class="fas fa-toolbox"></i> 主页工具显示</div>
+            <div class="config-section-body">
+                <div class="assistant-switch-row" style="margin-bottom:0;border-bottom:0;padding-bottom:0;">
+                    <div><div class="assistant-switch-title">照片分类管理</div><div class="assistant-switch-note">默认关闭；开启后会显示在主页工具列表中。</div></div>
+                    <label class="switch" title="显示照片分类管理"><input type="checkbox" id="f_photo_classify_enabled"><span class="switch-slider"></span></label>
+                </div>
+            </div>
+        </div>
+
         <!-- 桌面 Emoji 助手 -->
         <div class="config-section">
             <div class="config-section-title"><i class="fas fa-face-smile"></i> 桌面 Emoji 助手</div>
@@ -294,6 +304,7 @@
 
     function applyConfig(cfg) {
         renderHomeToolOrder(cfg.home_tool_order || []);
+        document.getElementById('f_photo_classify_enabled').checked = (cfg.home_tool_enabled || {})['photo-classify'] === true;
         var db = cfg.db || {};
         document.getElementById('f_db_enabled').checked = db.enabled !== false;
         document.getElementById('f_db_host').value = db.host || '';
@@ -422,6 +433,7 @@
         var dbPassword = document.getElementById('f_db_password').value;
         var config = {
             home_tool_order: homeToolOrder.slice(),
+            home_tool_enabled: { 'photo-classify': document.getElementById('f_photo_classify_enabled').checked },
             db: {
                 enabled: document.getElementById('f_db_enabled').checked,
                 host: document.getElementById('f_db_host').value.trim(),
