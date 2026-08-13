@@ -69,6 +69,8 @@ public class MainActivity extends Activity {
     private static final byte[] BIRDREPORT_AES_IV =
             "55DD79C6F04E1A67".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_HISTORY = 10;
+    private static final String DEFAULT_UNINTERESTED_BIRDS = "麻雀,白头鹎,绿头鸭,鸳鸯,珠颈斑鸠,喜鹊,灰喜鹊,灰椋鸟,大嘴乌鸦,小鷿鷈,凤头鷿鷈,普通鸬鹚,鸿雁,灰头绿啄木鸟,大斑啄木鸟,普通翠鸟,家燕,戴胜,白鹭,苍鹭";
+    private static final String DEFAULT_INTERESTED_BIRDS = "鸮,一级保护动物";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Map<String, String> birdreportCookies = new LinkedHashMap<>();
@@ -79,12 +81,12 @@ public class MainActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Window window = getWindow();
-        // Keep the system bar in the same light kingfisher palette as the web UI.
-        window.setStatusBarColor(Color.rgb(126, 190, 192));
+        // Keep the system bars in the same soft neutral palette as the web UI.
+        window.setStatusBarColor(Color.rgb(243, 245, 252));
         window.getDecorView().setSystemUiVisibility(
                 window.getDecorView().getSystemUiVisibility()
                         | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-        window.setNavigationBarColor(Color.rgb(243, 247, 245));
+        window.setNavigationBarColor(Color.rgb(243, 245, 252));
 
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
@@ -96,7 +98,7 @@ public class MainActivity extends Activity {
         settings.setGeolocationEnabled(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         webView.setWebViewClient(new WebViewClient());
-        webView.setBackgroundColor(Color.rgb(243, 247, 245));
+        webView.setBackgroundColor(Color.rgb(243, 245, 252));
         webView.addJavascriptInterface(new NativeBridge(), "Native");
         setContentView(webView);
         webView.loadUrl("file:///android_asset/web/index.html");
@@ -171,14 +173,35 @@ public class MainActivity extends Activity {
         String province = prefs().getString("preference_province", "").trim();
         String city = prefs().getString("preference_city", "").trim();
         String district = prefs().getString("preference_district", "").trim();
+        String model = validModel(prefs().getString("preference_model", "deepseek-v4-flash"));
+        int maxTokens = validMaxTokens(prefs().getString("preference_max_tokens", ""));
+        String interestedBirds = prefs().getString("preference_interested_birds", DEFAULT_INTERESTED_BIRDS).trim();
+        String uninterestedBirds = prefs().getString("preference_uninterested_birds", DEFAULT_UNINTERESTED_BIRDS).trim();
         try {
             return new JSONObject()
                     .put("province", province)
                     .put("city", city)
                     .put("district", district)
-                    .put("blacklist_users", birdBlacklist());
+                    .put("blacklist_users", birdBlacklist())
+                    .put("model", model)
+                    .put("max_tokens", maxTokens > 0 ? maxTokens : JSONObject.NULL)
+                    .put("interested_birds", interestedBirds)
+                    .put("uninterested_birds", uninterestedBirds);
         } catch (Exception ignored) {
             return new JSONObject();
+        }
+    }
+
+    private static String validModel(String value) {
+        return "deepseek-v4-pro".equals(value) ? "deepseek-v4-pro" : "deepseek-v4-flash";
+    }
+
+    private static int validMaxTokens(String value) {
+        try {
+            int parsed = Integer.parseInt(value == null ? "" : value.trim());
+            return parsed >= 1 && parsed <= 8192 ? parsed : 0;
+        } catch (Exception ignored) {
+            return 0;
         }
     }
 
@@ -187,11 +210,16 @@ public class MainActivity extends Activity {
         catch (Exception ignored) { return new JSONArray(); }
     }
 
-    private String saveBirdPreferences(String rawProvince, String rawCity, String rawDistrict, String rawBlacklist) {
+    private String saveBirdPreferences(String rawProvince, String rawCity, String rawDistrict, String rawBlacklist,
+            String rawModel, String rawMaxTokens, String rawInterestedBirds, String rawUninterestedBirds) {
         String province = rawProvince == null ? "" : rawProvince.trim();
         String city = rawCity == null ? "" : rawCity.trim();
         String district = rawDistrict == null ? "" : rawDistrict.trim();
+        String maxTokens = rawMaxTokens == null ? "" : rawMaxTokens.trim();
+        String interestedBirds = rawInterestedBirds == null ? "" : rawInterestedBirds.trim();
+        String uninterestedBirds = rawUninterestedBirds == null ? "" : rawUninterestedBirds.trim();
         if (province.isEmpty() && (!city.isEmpty() || !district.isEmpty())) return "填写城市或区县时，请同时填写省或直辖市";
+        if (!maxTokens.isEmpty() && validMaxTokens(maxTokens) == 0) return "max_tokens 请输入 1 到 8192 之间的整数，或留空";
         JSONArray blacklist = new JSONArray();
         Set<String> seen = new LinkedHashSet<>();
         for (String value : (rawBlacklist == null ? "" : rawBlacklist).split("[,，\\n]")) {
@@ -204,6 +232,12 @@ public class MainActivity extends Activity {
                 .putString("preference_city", city)
                 .putString("preference_district", district)
                 .putString("preference_blacklist_users", blacklist.toString())
+                .putString("preference_model", validModel(rawModel))
+                .putString("preference_max_tokens", maxTokens)
+                .putString("preference_interested_birds", interestedBirds)
+                .putString("preference_uninterested_birds", uninterestedBirds)
+                .remove("preference_thinking_enabled")
+                .remove("preference_effort")
                 .apply();
         return "";
     }
@@ -238,6 +272,8 @@ public class MainActivity extends Activity {
                         + "只有用户完全没说时间时，才使用默认最近7天。\n"
                         + "【回答原则】先给简短结论，再列最有用的地点或鸟种；明确实际日期、区域、地点数、记录数和数据来源。"
                         + "有记录不等于现在一定能看到，推荐时说明基于近期公开记录。零结果时建议扩大日期或区域，绝不猜测。"
+                        + "【鸟种偏好】优先强调用户关注的鸟种或一级保护动物；用户不关注的常见鸟可在结果中弱化，除非它们是用户问题的直接对象或唯一有效结果。"
+                        + "关注鸟种：" + preferences.optString("interested_birds") + "。不关注鸟种：" + preferences.optString("uninterested_birds") + "。"
                         + "使用简洁 Markdown，重点加粗并优先用短列表；涉及多个地点时必须给出一个最多3列的 Markdown 表格，列为‘地点、鸟种、保护级别’，不要展示记录数列，鸟种使用查询结果中的名称。"));
         JSONArray old = history();
         for (int i = 0; i < old.length(); i++) {
@@ -285,6 +321,9 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject callDeepSeek(JSONArray messages, boolean forceRecordsQuery) throws Exception {
+        JSONObject preferences = birdPreferences();
+        String model = preferences.optString("model", "deepseek-v4-flash");
+        int maxTokens = preferences.optInt("max_tokens", 0);
         JSONObject properties = new JSONObject()
                 .put("location_source", new JSONObject().put("type", "string").put("enum", new JSONArray().put("user").put("preference")).put("description", "本次问题说了地点用 user，完全没说地点才用 preference"))
                 .put("date_source", new JSONObject().put("type", "string").put("enum", new JSONArray().put("user").put("recent_7_days")).put("description", "本次问题给了明确时间用 user，否则用 recent_7_days"))
@@ -305,7 +344,7 @@ public class MainActivity extends Activity {
                 .put("description", "查询观鸟记录中心在指定日期、区域或地点关键词下的真实公开鸟种记录")
                 .put("parameters", parameters));
         JSONObject body = new JSONObject()
-                .put("model", "deepseek-chat")
+                .put("model", model)
                 .put("messages", messages)
                 .put("tools", new JSONArray().put(tool))
                 .put("tool_choice", forceRecordsQuery
@@ -313,7 +352,9 @@ public class MainActivity extends Activity {
                                 new JSONObject().put("name", "query_bird_records"))
                         : "auto")
                 .put("stream", false)
+                .put("thinking", new JSONObject().put("type", "disabled"))
                 .put("temperature", 0.2);
+        if (maxTokens > 0) body.put("max_tokens", maxTokens);
         return postDeepSeek(body);
     }
 
@@ -2171,8 +2212,9 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String savePreferences(String province, String city, String district, String blacklist) {
-            return saveBirdPreferences(province, city, district, blacklist);
+        public String savePreferences(String province, String city, String district, String blacklist,
+                String model, String maxTokens, String interestedBirds, String uninterestedBirds) {
+            return saveBirdPreferences(province, city, district, blacklist, model, maxTokens, interestedBirds, uninterestedBirds);
         }
 
         @JavascriptInterface
