@@ -85,24 +85,6 @@
     }
     .switch input:checked + .switch-slider { background: var(--success-color); }
     .switch input:checked + .switch-slider:before { transform: translateX(20px); }
-    .assistant-menu-list { display: grid; gap: 8px; }
-    .assistant-menu-item {
-        display: grid; grid-template-columns: 28px minmax(120px, 1fr) 150px minmax(150px, 1.4fr) 32px;
-        gap: 8px; align-items: center; padding: 10px;
-        border: 1px solid var(--border-color); border-radius: 8px; background: #fff;
-    }
-    .assistant-menu-item input, .assistant-menu-item select {
-        width: 100%; padding: 7px 8px; border: 1px solid var(--border-color); border-radius: 6px;
-        font-size: 0.82rem; color: var(--text-main); background: #fff; min-width: 0;
-    }
-    .assistant-menu-item input[type="checkbox"] { width: 16px; height: 16px; justify-self: center; }
-    .assistant-menu-item .btn-remove {
-        width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border-color);
-        background: #fff; color: var(--error-color); cursor: pointer;
-        display: inline-flex; align-items: center; justify-content: center;
-    }
-    .assistant-menu-item .btn-remove:hover { background: #fef2f2; }
-
     .tool-order-list { display: grid; gap: 8px; }
     .tool-order-item {
         display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center;
@@ -130,7 +112,7 @@
         display: inline-flex; align-items: center; gap: 6px;
     }
     .btn-primary { background: var(--primary-color); color: white; }
-    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:hover { background: #5d8ad6; }
     .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); }
     .btn-outline:hover { background: #f1f5f9; }
     .btn-success { background: var(--success-color); color: white; }
@@ -153,8 +135,6 @@
     @media (max-width: 640px) {
         .form-row { flex-direction: column; }
         .assistant-switch-row { align-items: flex-start; }
-        .assistant-menu-item { grid-template-columns: 28px 1fr 32px; }
-        .assistant-menu-item select, .assistant-menu-item [data-field="target"] { grid-column: 2 / 4; }
     }
 </style>
 {% endblock %}
@@ -219,52 +199,6 @@
             </div>
         </div>
 
-        <div class="config-section">
-            <div class="config-section-title"><i class="fas fa-toolbox"></i> 主页工具显示</div>
-            <div class="config-section-body">
-                <div class="assistant-switch-row" style="margin-bottom:0;border-bottom:0;padding-bottom:0;">
-                    <div><div class="assistant-switch-title">照片分类管理</div><div class="assistant-switch-note">默认关闭；开启后会显示在主页工具列表中。</div></div>
-                    <label class="switch" title="显示照片分类管理"><input type="checkbox" id="f_photo_classify_enabled"><span class="switch-slider"></span></label>
-                </div>
-            </div>
-        </div>
-
-        <!-- 桌面 Emoji 助手 -->
-        <div class="config-section">
-            <div class="config-section-title"><i class="fas fa-face-smile"></i> 桌面 Emoji 助手</div>
-            <div class="config-section-body" id="desktop-assistant-config">
-                <div class="assistant-switch-row">
-                    <div>
-                        <div class="assistant-switch-title">显示桌面助手</div>
-                        <div class="assistant-switch-note">保存后会自动应用，无需重启主窗口</div>
-                    </div>
-                    <label class="switch" title="开关桌面助手">
-                        <input type="checkbox" id="f_assistant_enabled">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="form-row">
-                    <div class="form-group" style="flex:0.35;">
-                        <label>助手图标</label>
-                        <input type="text" id="f_assistant_icon_path" placeholder="assets/assistant_kingfisher_transparent.png">
-                        <div class="form-help">支持相对路径或绝对路径，留空时回退到 Emoji。</div>
-                    </div>
-                    <div class="form-group" style="flex:0.25;">
-                        <label>助手 Emoji</label>
-                        <input type="text" id="f_assistant_emoji" maxlength="8" placeholder="🤪">
-                        <div class="form-help">当图标不存在或加载失败时使用。</div>
-                    </div>
-                    <div class="form-group">
-                        <label>右键功能菜单</label>
-                        <div id="assistant-menu-list" class="assistant-menu-list"></div>
-                        <button type="button" class="btn btn-outline btn-sm" onclick="addAssistantMenuItem()" style="margin-top:8px;">
-                            <i class="fas fa-plus"></i> 添加菜单
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div class="action-bar">
             <button type="button" class="btn btn-primary" onclick="saveConfig()">
                 <i class="fas fa-save"></i> 保存配置
@@ -277,19 +211,8 @@
 </div>
 
 <script>
-    var assistantMenuCount = 0;
     var allHomeTools = {{ home_tools | tojson }};
     var homeToolOrder = [];
-    var assistantActionLabels = {
-        open_toolbox: '打开工具箱',
-        open_tool: '打开指定工具',
-        open_url: '打开 URL',
-        copy_text: '复制文本',
-        run_command: '执行命令',
-        git_branches: 'Git 分支操作',
-        toggle_network: '切换网络',
-        disable_assistant: '关闭助手'
-    };
 
     document.addEventListener('DOMContentLoaded', loadConfig);
 
@@ -305,7 +228,6 @@
 
     function applyConfig(cfg) {
         renderHomeToolOrder(cfg.home_tool_order || []);
-        document.getElementById('f_photo_classify_enabled').checked = (cfg.home_tool_enabled || {})['photo-classify'] === true;
         var db = cfg.db || {};
         document.getElementById('f_db_enabled').checked = db.enabled !== false;
         document.getElementById('f_db_host').value = db.host || '';
@@ -320,13 +242,6 @@
         document.getElementById('f_deepseek_base_url').value = deepseek.base_url || 'https://api.deepseek.com';
         document.getElementById('f_deepseek_timeout').value = deepseek.timeout || 90;
         document.getElementById('f_deepseek_max_tokens').value = deepseek.max_tokens || '';
-        // 桌面 Emoji 助手
-        var assistant = cfg.desktop_assistant || {};
-        document.getElementById('f_assistant_enabled').checked = assistant.enabled !== false;
-        document.getElementById('f_assistant_icon_path').value = assistant.icon_path || 'assets/assistant_kingfisher_transparent.png';
-        document.getElementById('f_assistant_emoji').value = assistant.emoji || '🤪';
-        renderAssistantMenuItems(assistant.menu_items || []);
-
     }
 
     function normalizeHomeToolOrder(order) {
@@ -369,73 +284,10 @@
         renderHomeToolOrder(homeToolOrder);
     }
 
-    function renderAssistantMenuItems(items) {
-        var container = document.getElementById('assistant-menu-list');
-        container.innerHTML = '';
-        assistantMenuCount = 0;
-        (items || []).forEach(function(item) {
-            addAssistantMenuItem(item.label, item.action, item.target, item.enabled !== false);
-        });
-        if (assistantMenuCount === 0) {
-            addAssistantMenuItem('查看日志', 'open_tool', 'log-query', true);
-            addAssistantMenuItem('切换网络', 'toggle_network', '', true);
-            addAssistantMenuItem('Git操作', 'git_branches', '', true);
-            addAssistantMenuItem('配置管理', 'open_tool', 'config-manager', true);
-            addAssistantMenuItem('鸟种记录', 'open_tool', 'bird-records', true);
-        }
-    }
-
-    function addAssistantMenuItem(label, action, target, enabled) {
-        var container = document.getElementById('assistant-menu-list');
-        var idx = assistantMenuCount++;
-        var div = document.createElement('div');
-        div.className = 'assistant-menu-item';
-        div.id = 'assistant-menu-' + idx;
-        div.innerHTML =
-            '<input type="checkbox" data-field="enabled" title="启用" ' + (enabled === false ? '' : 'checked') + '>' +
-            '<input type="text" data-field="label" placeholder="菜单名称" value="' + escapeHtml(label || '') + '">' +
-            '<select data-field="action">' + buildAssistantActionOptions(action || 'open_tool') + '</select>' +
-            '<input type="text" data-field="target" placeholder="工具ID / URL / 文本 / 命令" value="' + escapeHtml(target || '') + '">' +
-            '<button type="button" class="btn-remove" title="删除" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>';
-        container.appendChild(div);
-    }
-
-    function buildAssistantActionOptions(selected) {
-        return Object.keys(assistantActionLabels).map(function(action) {
-            return '<option value="' + escapeHtml(action) + '" ' + (action === selected ? 'selected' : '') + '>' +
-                escapeHtml(assistantActionLabels[action]) + '</option>';
-        }).join('');
-    }
-
-    function collectAssistantConfig() {
-        var menuItems = [];
-        document.querySelectorAll('.assistant-menu-item').forEach(function(item) {
-            var label = item.querySelector('[data-field="label"]').value.trim();
-            var action = item.querySelector('[data-field="action"]').value.trim();
-            var target = item.querySelector('[data-field="target"]').value.trim();
-            var enabled = item.querySelector('[data-field="enabled"]').checked;
-            if (label && action) {
-                menuItems.push({
-                    label: label,
-                    action: action,
-                    target: target,
-                    enabled: enabled
-                });
-            }
-        });
-        return {
-            enabled: document.getElementById('f_assistant_enabled').checked,
-            icon_path: document.getElementById('f_assistant_icon_path').value.trim(),
-            emoji: document.getElementById('f_assistant_emoji').value.trim() || '🤪',
-            menu_items: menuItems
-        };
-    }
-
     async function saveConfig() {
         var dbPassword = document.getElementById('f_db_password').value;
         var config = {
             home_tool_order: homeToolOrder.slice(),
-            home_tool_enabled: { 'photo-classify': document.getElementById('f_photo_classify_enabled').checked },
             db: {
                 enabled: document.getElementById('f_db_enabled').checked,
                 host: document.getElementById('f_db_host').value.trim(),
@@ -452,7 +304,6 @@
                 timeout: Number(document.getElementById('f_deepseek_timeout').value || 90),
                 max_tokens: Number(document.getElementById('f_deepseek_max_tokens').value || 0)
             },
-            desktop_assistant: collectAssistantConfig(),
         };
 
         try {

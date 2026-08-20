@@ -8,17 +8,40 @@
 
 {% block head_extra %}
 <style>
-    .chat-shell { max-width: 980px; margin: 0 auto; }
-    .chat-title { margin-bottom: 16px; }
+    .main-content:has(.chat-shell) { max-width: 1560px; display: flex; flex-direction: column; }
+    .chat-shell { max-width: 100%; margin: 0 auto; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .chat-title { margin-bottom: 14px; }
     .chat-title h1 { margin: 0 0 6px; font-size: 1.35rem; }
     .chat-title p { margin: 0; color: var(--text-muted); font-size: .88rem; }
-    .chat-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
-    .messages { min-height: 440px; max-height: 62vh; overflow-y: auto; padding: 20px; background: #f8fafc; display: flex; flex-direction: column; gap: 14px; }
-    .msg { max-width: 86%; padding: 11px 14px; border-radius: 10px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-    .msg.user { align-self: flex-end; color: #fff; background: #2563eb; border-bottom-right-radius: 3px; }
+    .chat-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); flex: 1; display: flex; flex-direction: column; min-height: calc(100vh - 180px); }
+    .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 24px; background: #f8fafc; display: flex; flex-direction: column; gap: 14px; }
+    .msg { max-width: 86%; padding: 12px 16px; border-radius: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+    .msg.user { align-self: flex-end; color: #fff; background: #6a9ee8; border-bottom-right-radius: 3px; }
     .msg.assistant { align-self: flex-start; max-width: 94%; background: #fff; border: 1px solid var(--border-color); border-bottom-left-radius: 3px; white-space: normal; }
     .msg-copy { display:block; margin:10px 0 0 auto; border:1px solid var(--border-color); border-radius:6px; background:#fff; color:var(--text-muted); padding:4px 8px; font-size:.75rem; cursor:pointer; }
-    .msg-copy:hover { color:#1d4ed8; border-color:#93c5fd; }
+    .msg-copy:hover { color:#5d8ad6; border-color:#b3cdf5; }
+    .copy-selection-btn {
+        position: fixed;
+        z-index: 1200;
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 13px;
+        border: 1px solid var(--border-color);
+        border-radius: 9px;
+        background: #fff;
+        color: var(--text-main);
+        font-size: .8rem;
+        font-weight: 700;
+        box-shadow: 0 10px 28px rgba(15,23,42,.18);
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+        -webkit-user-select: none;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .copy-selection-btn.show { display: inline-flex; }
+    .copy-selection-btn:hover { background: var(--hover-bg); color: var(--primary-color); border-color: #b4ded8; }
     .msg.system { align-self: center; color: var(--text-muted); font-size: .82rem; background: transparent; }
     .markdown-body { min-width: 0; overflow-wrap: anywhere; }
     .markdown-body > :first-child { margin-top: 0; }
@@ -30,33 +53,33 @@
     .markdown-body h3, .markdown-body h4 { font-size: 1rem; }
     .markdown-body ul, .markdown-body ol { margin: .45em 0; padding-left: 1.5em; }
     .markdown-body li + li { margin-top: .2em; }
-    .markdown-body blockquote { margin: .65em 0; padding: .35em .8em; border-left: 3px solid #93c5fd; color: var(--text-muted); background: #f8fafc; }
+    .markdown-body blockquote { margin: .65em 0; padding: .35em .8em; border-left: 3px solid #b3cdf5; color: var(--text-muted); background: #f8fafc; }
     .markdown-body code { padding: .12em .35em; border-radius: 4px; background: #eef2f7; color: #be185d; font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .markdown-body pre { margin: .7em 0; padding: 11px 12px; overflow-x: auto; border-radius: 7px; background: #172033; color: #e5edf7; line-height: 1.55; -webkit-overflow-scrolling: touch; }
     .markdown-body pre code { padding: 0; background: transparent; color: inherit; white-space: pre; }
     .markdown-body table { display: block; width: max-content; max-width: 100%; margin: .7em 0; overflow-x: auto; border-collapse: collapse; font-size: .9em; }
     .markdown-body th, .markdown-body td { padding: 6px 9px; border: 1px solid var(--border-color); text-align: left; white-space: nowrap; }
     .markdown-body th { background: #f1f5f9; font-weight: 750; }
-    .markdown-body a { color: #1d4ed8; overflow-wrap: anywhere; }
+    .markdown-body a { color: #5d8ad6; overflow-wrap: anywhere; }
     .markdown-body hr { border: 0; border-top: 1px solid var(--border-color); margin: .8em 0; }
     .composer { padding: 14px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; align-items: flex-end; }
     .composer textarea { flex: 1; min-height: 46px; max-height: 140px; resize: vertical; border: 1px solid var(--border-color); border-radius: 8px; padding: 11px 12px; font: inherit; outline: none; }
-    .composer textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
-    .composer button { min-height: 46px; background: #2563eb; color: #fff; border: 0; border-radius: 8px; padding: 0 18px; font-weight: 700; cursor: pointer; }
+    .composer textarea:focus { border-color: #6a9ee8; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+    .composer button { min-height: 46px; background: #6a9ee8; color: #fff; border: 0; border-radius: 8px; padding: 0 18px; font-weight: 700; cursor: pointer; }
     .composer button:disabled { opacity: .55; cursor: wait; }
     .suggestions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .suggestions button { border: 1px solid #bfdbfe; color: #1d4ed8; background: #eff6ff; border-radius: 999px; padding: 7px 11px; cursor: pointer; }
+    .suggestions button { border: 1px solid #cfe0fb; color: #5d8ad6; background: #eff6ff; border-radius: 999px; padding: 7px 11px; cursor: pointer; }
     .tool-note { margin-top: 12px; color: var(--text-muted); font-size: .8rem; }
-    .query-trace { align-self: flex-start; max-width: 94%; color: #0f766e; font-size: .78rem; }
-    .detail-toggle { align-self: flex-start; border: 1px solid #bfdbfe; color: #1d4ed8; background: #eff6ff; border-radius: 7px; padding: 7px 10px; cursor: pointer; font-weight: 650; }
+    .query-trace { align-self: flex-start; max-width: 94%; color: #4a9c93; font-size: .78rem; }
+    .detail-toggle { align-self: flex-start; border: 1px solid #cfe0fb; color: #5d8ad6; background: #eff6ff; border-radius: 7px; padding: 7px 10px; cursor: pointer; font-weight: 650; }
     .location-detail { align-self: flex-start; width: min(94%, 850px); padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background:#fff; }
     .location-detail[hidden] { display:none; }
     .location-detail table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:.82rem; }
     .location-detail th, .location-detail td { padding:8px; border-bottom:1px solid var(--border-color); text-align:left; vertical-align:top; overflow-wrap:anywhere; }
     .location-detail th { background:#f1f5f9; }
     .protection-badge { display:inline-block; margin-right:3px; padding:1px 5px; border-radius:5px; font-size:.72rem; font-weight:750; }
-    .level-1 { color:#991b1b; background:#fee2e2; } .level-2 { color:#854d0e; background:#fef3c7; }
-    .uncertain-badge { display:inline-block; margin-right:3px; padding:1px 5px; border-radius:5px; font-size:.72rem; font-weight:750; color:#92400e; background:#ffedd5; }
+    .level-1 { color:#b36a66; background:#fee2e2; } .level-2 { color:#a97f58; background:#fef3c7; }
+    .uncertain-badge { display:inline-block; margin-right:3px; padding:1px 5px; border-radius:5px; font-size:.72rem; font-weight:750; color:#b5845e; background:#ffedd5; }
     .captcha-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,23,42,.45); }
     .captcha-modal[hidden] { display: none; }
     .captcha-dialog { width: min(420px, 100%); background: #fff; border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 20px 45px rgba(15,23,42,.22); overflow: hidden; }
@@ -68,18 +91,18 @@
     .captcha-image { width: 112px; height: 40px; border: 1px solid var(--border-color); border-radius: 6px; object-fit: cover; cursor: pointer; background: #f8fafc; }
     .captcha-hint, .captcha-error { font-size: .84rem; line-height: 1.6; }
     .captcha-hint { color: var(--text-muted); }
-    .captcha-error { min-height: 20px; color: #b91c1c; }
+    .captcha-error { min-height: 20px; color: #cc6b66; }
     .icon-button { width: 32px; height: 32px; border: 1px solid var(--border-color); border-radius: 6px; background: #fff; color: var(--text-muted); cursor: pointer; }
     .key-modal { position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.45); }
     .key-modal[hidden] { display:none; } .key-dialog { width:min(460px,100%); background:#fff; border:1px solid var(--border-color); border-radius:10px; padding:20px; box-shadow:0 20px 45px rgba(15,23,42,.22); }
     .key-dialog h2 { margin:0 0 8px; font-size:1.1rem; } .key-dialog p { margin:0 0 14px; color:var(--text-muted); font-size:.84rem; line-height:1.6; }
     .key-dialog input { width:100%; box-sizing:border-box; padding:10px 11px; border:1px solid var(--border-color); border-radius:7px; font:inherit; }
-    .key-error { min-height:20px; margin-top:7px; color:#b91c1c; font-size:.82rem; } .key-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
-    .chat-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:0 0 12px; }
+    .key-error { min-height:20px; margin-top:7px; color:#cc6b66; font-size:.82rem; } .key-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+    .chat-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin:0 0 12px; }
     .chat-status { color:var(--text-muted); font-size:.84rem; }
     .toolbar-actions { display:flex; gap:8px; }
     .toolbar-button { border:1px solid var(--border-color); border-radius:7px; background:#fff; color:var(--text-main); padding:8px 11px; cursor:pointer; font-weight:700; }
-    .toolbar-button.model { color:#0f766e; border-color:#99d7ce; background:#f0fdfa; min-width:66px; }
+    .toolbar-button.model { color:#4a9c93; border-color:#b4ded8; background:#f0fdfa; min-width:66px; }
     .preferences-modal { position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.45); }
     .preferences-modal[hidden] { display:none; }
     .preferences-dialog { width:min(580px,100%); max-height:calc(100vh - 36px); overflow:auto; background:#fff; border:1px solid var(--border-color); border-radius:10px; box-shadow:0 20px 45px rgba(15,23,42,.22); }
@@ -90,18 +113,16 @@
     .preference-field input,.preference-field textarea,.model-select { width:100%; box-sizing:border-box; border:1px solid var(--border-color); border-radius:7px; padding:9px 10px; background:#fff; color:var(--text-main); font:inherit; }
     .preference-field textarea { min-height:64px; resize:vertical; line-height:1.5; }
     .preferences-actions { display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border-color); }
-    @media (max-width:700px) { .preference-grid { grid-template-columns:1fr; } .chat-toolbar { align-items:flex-start; flex-direction:column; } }
+    @media (max-width:700px) { .preference-grid { grid-template-columns:1fr; } .chat-toolbar { align-items:flex-start; flex-direction:column; } .chat-card { min-height: 62vh; } .messages { padding: 16px; } }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="chat-shell">
     <div class="chat-title">
-        <h1><i class="fas fa-comments" style="color:#2563eb;"></i> AI 观鸟问答</h1>
-        <p>DeepSeek 会自动调用鸟种记录查询，再根据真实公开记录回答。</p>
+        <h1><i class="fas fa-comments" style="color:#6a9ee8;"></i> AI 观鸟问答</h1>
     </div>
     <div class="chat-toolbar">
-        <span id="preferenceHint" class="chat-status">默认地点加载中…</span>
         <div class="toolbar-actions"><button id="sourceQuick" class="toolbar-button" onclick="toggleSource()">记录中心</button><button id="modelQuick" class="toolbar-button model" onclick="toggleModel()">Flash</button><button class="toolbar-button" onclick="clearChatContent()"><i class="fas fa-trash-can"></i> 清空内容</button><button class="toolbar-button" onclick="openPreferences()"><i class="fas fa-sliders"></i> 偏好</button></div>
     </div>
     <div class="chat-card">
@@ -121,6 +142,7 @@
     </div>
     <div class="tool-note">提示：请在问题中说明地点和查询天数；未说明时默认查询最近 2 天。说“今日/今天”只查询当天。首次使用前请在“配置管理”中填写 DeepSeek API Key。</div>
 </div>
+<button id="copySelectionBtn" class="copy-selection-btn" type="button" onclick="copySelectedText()" aria-label="复制选中文字"><i class="fas fa-copy"></i> 复制选中</button>
 <div id="preferencesModal" class="preferences-modal" hidden><div class="preferences-dialog">
     <div class="preferences-head"><span><i class="fas fa-sliders"></i> 观鸟偏好</span><button class="icon-button" title="关闭" onclick="closePreferences()"><i class="fas fa-xmark"></i></button></div>
     <div class="preferences-body">
@@ -140,7 +162,7 @@
     <div class="preferences-actions"><button class="btn btn-outline" onclick="closePreferences()">取消</button><button id="preferencesSaveButton" class="btn btn-primary" onclick="savePreferences()">保存</button></div>
 </div></div>
 <div id="keyModal" class="key-modal" hidden><div class="key-dialog">
-    <h2><i class="fas fa-key" style="color:#2563eb;"></i> 设置 DeepSeek API Key</h2>
+    <h2><i class="fas fa-key" style="color:#6a9ee8;"></i> 设置 DeepSeek API Key</h2>
     <p>首次使用 AI 观鸟需要 DeepSeek API Key。Key 只保存在本机配置中。</p>
     <input id="deepseekKeyInput" type="password" placeholder="sk-..." autocomplete="off" onkeydown="handleKeyInput(event)">
     <div id="keyError" class="key-error"></div>
@@ -202,8 +224,8 @@
             const copyButton = document.createElement('button');
             copyButton.className = 'msg-copy'; copyButton.type = 'button'; copyButton.textContent = '复制'; copyButton.title = '复制这条回答';
             copyButton.onclick = async function() {
-                try { await navigator.clipboard.writeText(copyText); copyButton.textContent = '已复制'; }
-                catch (error) { copyButton.textContent = '复制失败'; }
+                const ok = await copyToClipboard(copyText);
+                copyButton.textContent = ok ? '已复制' : '复制失败';
                 setTimeout(() => { copyButton.textContent = '复制'; }, 1600);
             };
             el.appendChild(copyButton);
@@ -269,9 +291,7 @@
     function modelLabel() { return activeModel === 'deepseek-v4-pro' ? 'Pro' : 'Flash'; }
     function refreshPreferenceUi() {
         document.getElementById('modelQuick').textContent = modelLabel();
-        const place = [aiPreferences.province, aiPreferences.city, aiPreferences.district].filter(Boolean).join(' · ');
         document.getElementById('sourceQuick').textContent = dataSource === 'ebird' ? 'eBird' : '记录中心';
-        document.getElementById('preferenceHint').textContent = dataSource === 'ebird' ? 'eBird 近期公开观测 · 支持已收录国家和地区' : (place ? '默认地点：' + place : '请在偏好中设置默认地点');
         applyPreferenceCity();
     }
     function toggleSource() { dataSource = dataSource === 'ebird' ? 'birdreport' : 'ebird'; refreshPreferenceUi(); }
@@ -410,6 +430,102 @@
         }
     }
     function handleCaptchaKey(event) { if (event.key === 'Enter') { event.preventDefault(); submitCaptcha(); } }
+
+    // ---- 复制选中文字 ----
+    let copySelectionText = '';
+    let selectionTimer = null;
+
+    function hideCopyButton() {
+        document.getElementById('copySelectionBtn').classList.remove('show');
+    }
+
+    function scheduleCopyButton() {
+        clearTimeout(selectionTimer);
+        selectionTimer = setTimeout(updateCopyButton, 150);
+    }
+
+    function updateCopyButton() {
+        const button = document.getElementById('copySelectionBtn');
+        const selection = window.getSelection();
+        const text = selection ? selection.toString().trim() : '';
+        if (!text || !selection.rangeCount) { hideCopyButton(); return; }
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const node = container.nodeType === 1 ? container : container.parentElement;
+        if (!node || !node.closest('.msg')) { hideCopyButton(); return; }
+        copySelectionText = text;
+        const rect = range.getBoundingClientRect();
+        const buttonWidth = 96;
+        const left = Math.min(Math.max(rect.left, 8), window.innerWidth - buttonWidth - 12);
+        const top = Math.max(rect.bottom + 8, 10);
+        button.style.left = left + 'px';
+        button.style.top = top + 'px';
+        button.classList.add('show');
+    }
+
+    function copySelectedText() {
+        const button = document.getElementById('copySelectionBtn');
+        const text = copySelectionText;
+        if (!text) return;
+        const restore = () => {
+            button.innerHTML = '<i class="fas fa-copy"></i> 复制选中';
+            hideCopyButton();
+        };
+        copyToClipboard(text).then((ok) => {
+            button.innerHTML = ok ? '<i class="fas fa-check"></i> 已复制' : '<i class="fas fa-xmark"></i> 复制失败';
+            setTimeout(restore, 1400);
+        });
+    }
+
+    async function copyToClipboard(text) {
+        // 1) 桌面版（pywebview/WKWebView）优先走后端 pbcopy，navigator.clipboard 在 macOS 上不可用
+        try {
+            const response = await fetch('/api/clipboard', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text})
+            });
+            const data = await response.json();
+            if (response.ok && data && data.status === 'ok') return true;
+        } catch (error) { /* 继续尝试浏览器剪贴板 */ }
+        // 2) 现代浏览器剪贴板
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (error) { /* 继续尝试兜底 */ }
+        // 3) execCommand 兜底
+        return copyTextFallback(text);
+    }
+
+    function copyTextFallback(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (error) { ok = false; }
+        document.body.removeChild(textarea);
+        return ok;
+    }
+
+    document.addEventListener('mouseup', scheduleCopyButton);
+    document.addEventListener('keyup', (event) => {
+        if (event.key === 'Shift' || event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            scheduleCopyButton();
+        }
+    });
+    document.addEventListener('selectionchange', () => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+            hideCopyButton();
+        }
+    });
+    document.addEventListener('scroll', hideCopyButton, true);
+
     restoreChatCache();
     loadDeepseekConfig().then(() => { if (!deepseekKey) openKeyDialog(true); });
 </script>

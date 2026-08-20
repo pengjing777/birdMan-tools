@@ -3,28 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#123c3a">
+    <meta name="theme-color" content="#e8f5f0">
     <title>{% block title %}鸟友工具箱{% endblock %} | 鸟友工具箱</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='43' fill='%23123c3a'/><path d='M28 59c18 1 19-26 37-21-4 4-5 8-4 12 6 2 10 7 11 14-15-7-27 8-44-5Z' fill='%23fff'/><circle cx='58' cy='42' r='2.5' fill='%23123c3a'/></svg>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary-color: #0f766e;
-            --primary-hover: #0b5f59;
-            --primary-soft: #e7f5f2;
-            --success-color: #16a34a;
-            --error-color: #dc2626;
-            --bg-color: #f5f7f3;
+            --primary-color: #2a9d92;
+            --primary-hover: #1f857b;
+            --primary-soft: #e2f4f0;
+            --success-color: #34b26a;
+            --error-color: #e05555;
+            --bg-color: #f6f9f6;
             --card-bg: #ffffff;
             --input-bg: #ffffff;
-            --hover-bg: #f1f5f1;
-            --text-main: #18312f;
-            --text-muted: #667b77;
-            --header-bg: rgba(18, 60, 58, 0.96);
-            --border-color: #dfe8e3;
+            --hover-bg: #eaf3ee;
+            --text-main: #22423d;
+            --text-muted: #6f8c84;
+            --header-bg: rgba(32, 104, 96, 0.9);
+            --border-color: #e5ede8;
             --accent: var(--primary-color);
-            --shadow-sm: 0 1px 2px rgba(18, 60, 58, 0.04), 0 4px 14px rgba(18, 60, 58, 0.05);
-            --shadow-md: 0 18px 45px rgba(18, 60, 58, 0.11);
+            --shadow-sm: 0 1px 2px rgba(30, 90, 82, 0.04), 0 6px 18px rgba(30, 90, 82, 0.05);
+            --shadow-md: 0 20px 48px rgba(30, 90, 82, 0.1);
+            --radius-sm: 8px;
+            --radius-md: 14px;
+            --radius-lg: 20px;
         }
 
         * { box-sizing: border-box; }
@@ -34,35 +37,43 @@
         body {
             font-family: Inter, "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             background:
-                radial-gradient(circle at 6% 0%, rgba(168, 210, 193, 0.22), transparent 25rem),
+                radial-gradient(1100px 460px at 88% -8%, rgba(160, 214, 190, 0.22), transparent 62%),
+                radial-gradient(900px 420px at -6% 4%, rgba(148, 194, 214, 0.12), transparent 58%),
                 var(--bg-color);
+            background-attachment: fixed;
             color: var(--text-main);
             margin: 0;
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
             text-rendering: optimizeLegibility;
+            line-height: 1.6;
         }
 
         button, input, textarea, select { font: inherit; }
         button, a { -webkit-tap-highlight-color: transparent; }
-        ::selection { background: #bfe3da; color: #123c3a; }
+        ::selection { background: #cdeee5; color: #1d554d; }
+
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cfded6; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+        ::-webkit-scrollbar-thumb:hover { background: #b4ccc0; background-clip: content-box; border: 2px solid transparent; }
 
         .navbar {
-            background: var(--header-bg);
-            padding: 0 clamp(18px, 4vw, 48px);
-            min-height: 68px;
+            background: rgba(242, 250, 246, 0.85);
+            padding: 0 clamp(20px, 4vw, 48px);
+            min-height: 66px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 20px;
-            color: white;
+            color: var(--text-main);
             position: sticky;
             top: 0;
             z-index: 100;
-            border-bottom: 1px solid rgba(255,255,255,0.09);
-            box-shadow: 0 8px 28px rgba(18, 60, 58, 0.12);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(42, 157, 146, 0.18);
+            box-shadow: 0 10px 30px rgba(30, 110, 100, 0.08);
+            backdrop-filter: blur(18px) saturate(1.25);
+            -webkit-backdrop-filter: blur(18px) saturate(1.25);
         }
 
         .navbar-brand {
@@ -70,12 +81,14 @@
             align-items: center;
             gap: 12px;
             min-width: 0;
-            font-size: 1.02rem;
-            font-weight: 760;
+            font-size: 1.04rem;
+            font-weight: 780;
             letter-spacing: 0.02em;
             text-decoration: none;
-            color: white;
+            color: var(--text-main);
+            transition: opacity .2s;
         }
+        .navbar-brand:hover { opacity: .85; }
 
         .brand-mark {
             width: 38px;
@@ -84,47 +97,50 @@
             align-items: center;
             justify-content: center;
             flex: 0 0 auto;
-            border: 1px solid rgba(255,255,255,0.18);
+            border: 1px solid rgba(42, 157, 146, 0.28);
             border-radius: 12px;
-            background: rgba(255,255,255,0.12);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
+            color: var(--primary-color);
+            background: linear-gradient(135deg, rgba(42, 157, 146, 0.16), rgba(42, 157, 146, 0.06));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 6px 14px rgba(42, 157, 146, 0.1);
         }
 
         .brand-mark i { transform: rotate(-8deg); }
-        .navbar-brand span { font-weight: 400; opacity: 0.62; }
+        .navbar-brand span { font-weight: 400; opacity: 0.55; }
 
         .nav-back {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            color: rgba(255,255,255,0.82);
+            color: var(--text-muted);
             text-decoration: none;
             font-size: 0.88rem;
             font-weight: 600;
-            padding: 9px 14px;
-            border: 1px solid rgba(255,255,255,0.13);
+            padding: 9px 15px;
+            border: 1px solid rgba(42, 157, 146, 0.25);
             border-radius: 999px;
-            transition: color 0.2s, background 0.2s, transform 0.2s;
+            background: rgba(255,255,255,0.7);
+            transition: color 0.2s, background 0.2s, transform 0.2s, border-color 0.2s;
         }
 
         .nav-back:hover {
-            background: rgba(255,255,255,0.12);
-            color: white;
+            background: var(--primary-soft);
+            color: var(--primary-hover);
             transform: translateX(-2px);
+            border-color: rgba(42, 157, 146, 0.45);
         }
 
         .main-content {
             width: 100%;
             max-width: 1240px;
             margin: 0 auto;
-            padding: clamp(22px, 4vw, 42px) clamp(16px, 4vw, 32px) 56px;
+            padding: clamp(26px, 4vw, 46px) clamp(18px, 4vw, 34px) 60px;
         }
 
         .btn {
             min-height: 40px;
             padding: 9px 18px;
-            border-radius: 10px;
-            border: none;
+            border-radius: 11px;
+            border: 1px solid transparent;
             font-weight: 650;
             cursor: pointer;
             display: inline-flex;
@@ -132,27 +148,34 @@
             gap: 8px;
             transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
             font-size: 0.88rem;
+            line-height: 1.4;
+            text-decoration: none;
         }
-        .btn-primary { background: var(--primary-color); color: white; justify-content: center; box-shadow: 0 6px 14px rgba(15,118,110,.16); }
-        .btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 9px 20px rgba(15,118,110,.22); }
-        .btn-outline { background: #fff; border: 1px solid var(--border-color); color: var(--text-muted); }
-        .btn-outline:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-main); border-color: #cbdad3; }
-        .btn-success { background: var(--success-color); color: white; }
-        .btn-success:hover:not(:disabled) { background: #15803d; }
+        .btn-primary {
+            background: linear-gradient(135deg, #5cb9ae, #4a9c93);
+            color: white;
+            justify-content: center;
+            box-shadow: 0 8px 18px rgba(15,118,110,.22), inset 0 1px 0 rgba(255,255,255,.16);
+        }
+        .btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, #4faea4, #3d857d); transform: translateY(-1px); box-shadow: 0 12px 24px rgba(15,118,110,.28), inset 0 1px 0 rgba(255,255,255,.14); }
+        .btn-outline { background: #fff; border-color: var(--border-color); color: var(--text-muted); box-shadow: 0 1px 2px rgba(18,60,58,.04); }
+        .btn-outline:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-main); border-color: #c4d6cc; }
+        .btn-success { background: linear-gradient(135deg, #6cc691, #5cb983); color: white; box-shadow: 0 8px 18px rgba(22,163,74,.22), inset 0 1px 0 rgba(255,255,255,.16); }
+        .btn-success:hover:not(:disabled) { background: linear-gradient(135deg, #63bd89, #4f9468); transform: translateY(-1px); }
         .btn:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
-            outline: 3px solid rgba(15,118,110,.22);
+            outline: 3px solid rgba(15,118,110,.25);
             outline-offset: 2px;
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
+            from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .fade-in { animation: fadeIn 0.45s ease both; }
+        .fade-in { animation: fadeIn 0.5s cubic-bezier(.22,.61,.36,1) both; }
 
         @media (max-width: 640px) {
-            .navbar { min-height: 62px; }
+            .navbar { min-height: 60px; }
             .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
             .navbar-brand span { display: none; }
             .nav-back { padding: 8px 11px; }

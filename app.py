@@ -19,6 +19,7 @@ import webbrowser
 import zipfile
 import unicodedata
 import requests
+import sys
 from html import escape as html_escape
 from io import BytesIO
 from xml.sax.saxutils import escape as xml_escape
@@ -153,48 +154,75 @@ TOOLS = [
         "name": "配置管理",
         "description": "管理应用配置参数，支持在线修改 SSH、数据库、路径等配置。",
         "icon": "fa-cogs",
-        "color": "#8b5cf6"
+        "color": "#a08ce0"
     },
     {
         "id": "bird-records",
         "name": "鸟种记录",
         "description": "维护常用观鸟地点，点击地点后查询最近一天的鸟种记录。",
         "icon": "fa-dove",
-        "color": "#16a34a"
+        "color": "#58ad7d"
     },
     {
         "id": "ai-bird-chat",
         "name": "AI 观鸟问答",
         "description": "对接 DeepSeek，用自然语言查询鸟种记录并自动总结。",
         "icon": "fa-comments",
-        "color": "#2563eb"
+        "color": "#5f97e0"
     },
     {
         "id": "photo-classify",
         "name": "照片分类管理",
         "description": "扫描照片、按拍摄日期分组，并复制或移动到日期目录。",
         "icon": "fa-images",
-        "color": "#e91e63"
+        "color": "#dd7f9e"
     },
     {
         "id": "bird-navigation",
         "name": "小鸟导航",
         "description": "按保护鸟种和省市区查询观鸟记录，并跳转地图查看观测位置。",
         "icon": "fa-binoculars",
-        "color": "#0f766e"
+        "color": "#4a9c93"
     },
     {
         "id": "travel-recommendation",
         "name": "旅行推荐",
         "description": "按城市和天数生成结合近期鸟类记录的观鸟旅行攻略。",
         "icon": "fa-route",
-        "color": "#d97706"
+        "color": "#d9965c"
     }
 ]
 
 @app.route('/')
 def index():
     return render_template('index.html', tools=get_ordered_tools())
+
+@app.route('/api/clipboard', methods=['POST'])
+def api_clipboard():
+    """将文本写入系统剪贴板。桌面版使用 pywebview (WKWebView) 时，
+    navigator.clipboard 在 macOS 上不可用，前端统一走本接口完成复制。"""
+    try:
+        payload = request.get_json(silent=True) or {}
+        text = str(payload.get("text") or "")
+        if not text:
+            return jsonify({"status": "error", "error": "内容为空"}), 400
+        if sys.platform == "darwin":
+            proc = subprocess.run(["pbcopy"], input=text, text=True, check=True, timeout=10)
+        elif os.name == "nt":
+            proc = subprocess.run(["clip"], input=text, text=True, check=True, timeout=10)
+        else:
+            for cmd in (["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
+                try:
+                    subprocess.run(cmd, input=text, text=True, check=True, timeout=10)
+                    break
+                except Exception:
+                    continue
+            else:
+                return jsonify({"status": "error", "error": "未找到可用的剪贴板工具"}), 500
+        return jsonify({"status": "ok"})
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
 
 def get_ordered_tools():
     tool_map = {tool["id"]: tool for tool in TOOLS}
@@ -2958,6 +2986,8 @@ def api_travel_recommendation_generate():
                 city = "" if province.endswith("省") else destination
             details = filter_bird_record_blacklist(fetch_birdreport_public_area_details(province, start_date, end_date, city))
             levels = get_protected_wildlife_level({item.get("bird_name") for item in details})
+            for item in details:
+                item["protection_level"] = levels.get(item.get("bird_name"))
             evidence_rows = [
                 f"地点：{item.get('observation_location') or '-'} | 鸟种：{item.get('bird_name') or '-'} | 保护级别：{levels.get(item.get('bird_name')) or '未匹配'} | 日期：{item.get('observation_time') or '-'} | 数量：{item.get('bird_count') or '-'}"
                 for item in details
@@ -2982,7 +3012,6 @@ def api_travel_recommendation_generate():
             "countryCode": country_code, "startDate": start_date,
             "endDate": end_date, "source": source, "recordCount": len(evidence_rows),
             "prompt": prompt, "answer": answer, "answerHtml": _render_ai_markdown(answer),
-            "dailyPlans": _travel_daily_plans(travel_records, days),
             "records": travel_records,
         })
     except BirdreportCaptchaRequired as e:

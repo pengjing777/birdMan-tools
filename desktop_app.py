@@ -42,6 +42,7 @@ if __name__ == "__main__":
         width=1280,
         height=860,
         min_size=(1024, 680),
+        text_select=True,
     )
     assistant = DesktopAssistantController(main_window, base_url)
     assistant.prepare_initial_window()

@@ -104,7 +104,7 @@
         align-items: center;
         gap: 10px;
     }
-    .status-info { background: #eff6ff; color: #1d4ed8; }
+    .status-info { background: #eff6ff; color: #5d8ad6; }
     .status-success { background: #ecfdf5; color: #065f46; }
 
     .log-box {
@@ -139,10 +139,10 @@
         font-size: 0.85rem;
     }
 
-    .t-tid { color: #dc2626; font-weight: bold; background: #fee2e2; padding: 1px 4px; border-radius: 4px; }
-    .t-date { color: #16a34a; font-weight: 500; }
+    .t-tid { color: #e07a74; font-weight: bold; background: #fee2e2; padding: 1px 4px; border-radius: 4px; }
+    .t-date { color: #5cb983; font-weight: 500; }
     .t-error { color: #ffffff; background: #ef4444; padding: 2px 5px; border-radius: 4px; }
-    .t-info { color: #2563eb; font-weight: bold; }
+    .t-info { color: #6a9ee8; font-weight: bold; }
     .t-kw { background: #fde047; color: #000; font-weight: bold; padding: 0 2px; }
 
     @media (max-width: 768px) {
@@ -344,13 +344,13 @@
             } else {
                 statusBox.className = 'status-bar';
                 statusBox.style.background = '#fef2f2';
-                statusBox.style.color = '#dc2626';
+                statusBox.style.color = '#e07a74';
                 statusBox.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + data.error;
             }
         } catch (e) {
             statusBox.className = 'status-bar';
             statusBox.style.background = '#fef2f2';
-            statusBox.style.color = '#dc2626';
+            statusBox.style.color = '#e07a74';
             statusBox.innerHTML = '<i class="fas fa-wifi"></i> 网络异常或后端未启动';
         }
     }
