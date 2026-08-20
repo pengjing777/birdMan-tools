@@ -22,10 +22,18 @@
     "base_url": ""
   },
   "deepseek": {
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-flash",
     "api_key": "",
     "base_url": "https://api.deepseek.com",
-    "timeout": 90
+    "timeout": 90,
+    "max_tokens": 0
+  },
+  "ai_bird_preferences": {
+    "province": "",
+    "city": "",
+    "district": "",
+    "interested_birds": "鸮,一级保护动物",
+    "uninterested_birds": "麻雀,白头鹎,绿头鸭,鸳鸯,珠颈斑鸠,喜鹊,灰喜鹊,灰椋鸟,大嘴乌鸦,小鷿鷈,凤头鷿鷈,普通鸬鹚,鸿雁,灰头绿啄木鸟,大斑啄木鸟,普通翠鸟,家燕,戴胜,白鹭,苍鹭"
   },
   "bird_record_blacklist": [],
   "desktop_assistant": {

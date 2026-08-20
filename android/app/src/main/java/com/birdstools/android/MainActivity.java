@@ -2,7 +2,11 @@ package com.birdstools.android;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.SharedPreferences;
+import android.location.Address;
+import android.location.Geocoder;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.security.keystore.KeyGenParameterSpec;
@@ -60,6 +64,9 @@ public class MainActivity extends Activity {
     private static final String KEY_ALIAS = "birds_tools_deepseek_key";
     private static final String API_URL = "https://api.deepseek.com/chat/completions";
     private static final String BIRDREPORT_API = "https://api.birdreport.cn/";
+    private static final String EBIRD_API = "https://api.ebird.org/v2/";
+    // Temporary client-side key supplied for this private build. Move to a server proxy before public release.
+    private static final String EBIRD_API_KEY = "484c79c2-9614-4b36-ad14-1732dbbc12ef";
     private static final String BIRDREPORT_PUBLIC_KEY =
             "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCvxXa98E1uWXnBzXkS2yHUfnBM6n3PCwLdfIox03T91joBvjtoDqiQ5x3t"
             + "TOfpHs3LtiqMMEafls6b0YWtgB1dse1W5m+FpeusVkCOkQxB4SZDH6tuerIknnmB/Hsq5wgEkIvO5Pff9biig6AyoAkdWp"
@@ -69,6 +76,7 @@ public class MainActivity extends Activity {
     private static final byte[] BIRDREPORT_AES_IV =
             "55DD79C6F04E1A67".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_HISTORY = 10;
+    private final Map<String, String> travelSpeciesCache = new LinkedHashMap<>();
     private static final String DEFAULT_UNINTERESTED_BIRDS = "麻雀,白头鹎,绿头鸭,鸳鸯,珠颈斑鸠,喜鹊,灰喜鹊,灰椋鸟,大嘴乌鸦,小鷿鷈,凤头鷿鷈,普通鸬鹚,鸿雁,灰头绿啄木鸟,大斑啄木鸟,普通翠鸟,家燕,戴胜,白鹭,苍鹭";
     private static final String DEFAULT_INTERESTED_BIRDS = "鸮,一级保护动物";
 
@@ -169,6 +177,11 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void copyTextToClipboard(String text) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("鸟友工具箱", text == null ? "" : text));
+    }
+
     private JSONObject birdPreferences() {
         String province = prefs().getString("preference_province", "").trim();
         String city = prefs().getString("preference_city", "").trim();
@@ -258,18 +271,179 @@ public class MainActivity extends Activity {
     }
 
     private QueryTrace requestDeepSeek(String question) throws Exception {
+        return requestDeepSeek(question, "birdreport");
+    }
+
+    private JSONObject requestTravelRecommendation(String city, int days, String travelType) throws Exception {
+        if (apiKey().isEmpty()) throw new Exception("请先设置 DeepSeek API Key");
+        String scope = "international".equalsIgnoreCase(travelType) ? "国外" : "国内";
+        String evidence = "未能取得该目的地的近期记录；不得编造珍稀鸟名。";
+        JSONArray travelRecords = new JSONArray();
+        if ("domestic".equalsIgnoreCase(travelType)) {
+            try {
+                String[] location = extractExplicitLocation(city);
+                String province = location[0], targetCity = location[1];
+                if (province.isEmpty()) {
+                    String[] normalized = normalizeRegion("", city);
+                    province = normalized[0]; targetCity = normalized[1];
+                }
+                Calendar end = Calendar.getInstance(Locale.US);
+                Calendar start = (Calendar) end.clone(); start.add(Calendar.DAY_OF_MONTH, -6);
+                List<JSONObject> details = fetchBirdreportDetails(province, targetCity, formatDate(start), formatDate(end));
+                travelSpeciesCache.clear();
+                Map<String, Set<String>> locationBirds = new LinkedHashMap<>();
+                Map<String, Map<String, String>> locationLevels = new LinkedHashMap<>();
+                for (JSONObject item : details) {
+                    String observedLocation = item.optString("observation_location").trim();
+                    String bird = item.optString("bird_name").trim();
+                    if (observedLocation.isEmpty() || bird.isEmpty()) continue;
+                    travelRecords.put(new JSONObject().put("location", observedLocation)
+                            .put("bird", bird).put("date", item.optString("observation_time").substring(0, Math.min(10, item.optString("observation_time").length())))
+                            .put("count", item.opt("bird_count")).put("protectionLevel", item.optString("protection_level")));
+                    locationBirds.computeIfAbsent(observedLocation, key -> new LinkedHashSet<>()).add(bird);
+                    locationLevels.computeIfAbsent(observedLocation, key -> new LinkedHashMap<>()).put(bird, item.optString("protection_level").trim());
+                }
+                StringBuilder facts = new StringBuilder();
+                int locationCount = 0;
+                for (String observedLocation : locationBirds.keySet()) {
+                    StringBuilder species = new StringBuilder();
+                    for (String bird : locationBirds.get(observedLocation)) {
+                        String level = locationLevels.get(observedLocation).get(bird);
+                        if (species.length() > 0) species.append("、");
+                        species.append(bird);
+                        if (!level.isEmpty()) species.append("（").append(level).append("）");
+                    }
+                    travelSpeciesCache.put(observedLocation, species.toString());
+                    if (locationCount++ >= 60) break;
+                    facts.append("地点：").append(observedLocation).append("｜鸟种：").append(species).append("\n");
+                }
+                Set<String> seen = new LinkedHashSet<>();
+                for (JSONObject item : details) {
+                    String level = item.optString("protection_level").trim();
+                    String bird = item.optString("bird_name").trim();
+                    if (bird.isEmpty() || !("Ⅰ级".equals(level) || "Ⅱ级".equals(level)) || !seen.add(bird)) continue;
+                    facts.append(bird).append("（").append(level).append("） · ")
+                            .append(item.optString("observation_location")).append("\n");
+                    if (seen.size() >= 30) break;
+                }
+                if (facts.length() > 0) evidence = facts.toString();
+            } catch (Exception ignored) {
+                // Travel planning remains available if the record center requires captcha or is unavailable.
+            }
+        }
+        JSONArray messages = new JSONArray()
+                .put(new JSONObject().put("role", "system").put("content",
+                        "你是专业的观鸟旅行规划师。请为用户生成具体、克制、适合手机阅读的中文攻略。"
+                                + "行程不要排满：每天最多安排1到2个核心观鸟地点，并明确留出午休、交通和机动时间。"
+                                + "鸟种只能从提供的近期记录中选择，优先列出一级或二级保护鸟；常见鸟（麻雀、白头鹎、喜鹊、乌鸦、白鹭等）不要列入重点，也不要为了凑数编造珍稀鸟。"
+                                + "必须在全文最后单独列出‘本次记录中的重点珍稀鸟’，说明鸟名、保护级别、可能观察地点和观察提醒；没有证据就明确写‘近期记录未提供，无法判断’，不能猜测。"
+                                + "每天按‘清晨重点、白天安排、交通/休息、注意事项’输出，最后给出装备、天气和出发前确认事项，再输出重点珍稀鸟列表。"))
+                .put(new JSONObject().put("role", "user").put("content",
+                        "请规划一份" + scope + "目的地“" + city + "”的观鸟旅行，旅行天数为 " + days + " 天。"
+                                + "优先推荐城市周边易到达、适合清晨观察的地点，并给出行程顺序和装备建议。"
+                                + "以下是目的地近七天记录中筛出的保护鸟证据，只能据此判断珍稀鸟：\n" + evidence));
+        JSONObject preferences = birdPreferences();
+        JSONObject body = new JSONObject().put("model", preferences.optString("model", "deepseek-v4-flash"))
+                .put("messages", messages).put("stream", false)
+                .put("thinking", new JSONObject().put("type", "disabled"))
+                .put("temperature", 0.4);
+        int maxTokens = preferences.optInt("max_tokens", 0);
+        if (maxTokens > 0) body.put("max_tokens", maxTokens);
+        JSONObject response = postDeepSeek(body);
+        String answer = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content").trim();
+        if (answer.isEmpty() || answer.length() < 80 || answer.matches(".*(?:首先让我查询|正在查询|我先查询).*") && !answer.matches("(?s).*第\\s*1\\s*天.*"))
+            throw new Exception("旅行攻略生成不完整，请重新生成");
+        return new JSONObject().put("answer", answer).put("records", travelRecords).put("days", days);
+    }
+
+    private String queryTravelLocationSpecies(String location, String fallbackCity) throws Exception {
+        String normalizedLocation = location == null ? "" : location.replaceAll("第[一二三四五六七八九十0-9]+天", "")
+                .replaceAll("[：:：·|（）()]+", " ").trim();
+        for (Map.Entry<String, String> entry : travelSpeciesCache.entrySet()) {
+            if (normalizedLocation.contains(entry.getKey()) || entry.getKey().contains(normalizedLocation)) {
+                return "以下为推荐地点近七天记录（生成攻略时已查询，未重复请求接口）：\n• " + entry.getValue();
+            }
+        }
+        if (!travelSpeciesCache.isEmpty()) {
+            StringBuilder cached = new StringBuilder("未匹配到该标题的精确地点，以下为本次攻略已查询的地点记录：\n");
+            int count = 0;
+            for (Map.Entry<String, String> entry : travelSpeciesCache.entrySet()) {
+                cached.append("• ").append(entry.getKey()).append("：").append(entry.getValue()).append("\n");
+                if (++count >= 40) break;
+            }
+            return cached.toString().trim();
+        }
+        String[] explicit = extractExplicitLocation(fallbackCity);
+        String province = explicit[0], city = explicit[1];
+        if (province.isEmpty()) {
+            String[] normalized = normalizeRegion("", fallbackCity);
+            province = normalized[0]; city = normalized[1];
+        }
+        Calendar end = Calendar.getInstance(Locale.US);
+        Calendar start = (Calendar) end.clone(); start.add(Calendar.DAY_OF_MONTH, -6);
+        List<JSONObject> details = fetchBirdreportDetails(province, city, formatDate(start), formatDate(end));
+        String keyword = location.replaceAll("第[一二三四五六七八九十0-9]+天", "")
+                .replaceAll("[：:：·|（）()]+", " ").trim();
+        List<JSONObject> matching = new ArrayList<>();
+        if (keyword.length() >= 2) {
+            for (JSONObject item : details) {
+                if (item.optString("observation_location").contains(keyword)) matching.add(item);
+            }
+        }
+        boolean usedCityFallback = matching.isEmpty();
+        if (!usedCityFallback) details = matching;
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        Map<String, String> levels = new LinkedHashMap<>();
+        for (JSONObject item : details) {
+            String bird = item.optString("bird_name").trim();
+            if (bird.isEmpty()) continue;
+            counts.put(bird, counts.containsKey(bird) ? counts.get(bird) + 1 : 1);
+            String level = item.optString("protection_level").trim();
+            if (!level.isEmpty()) levels.put(bird, level);
+        }
+        List<String> names = new ArrayList<>(counts.keySet());
+        Collections.sort(names, (left, right) -> {
+            int rank = Integer.compare(protectionRank(levels.get(right)), protectionRank(levels.get(left)));
+            return rank != 0 ? rank : Integer.compare(counts.get(right), counts.get(left));
+        });
+        StringBuilder result = new StringBuilder(usedCityFallback
+                ? "未匹配到推荐地点的精确名称，以下为" + fallbackCity + "近七天区域记录：\n"
+                : "以下为该推荐地点近七天记录：\n");
+        for (String bird : names) {
+            String level = levels.get(bird);
+            result.append("• ").append(bird);
+            if (level != null && !level.isEmpty()) result.append(" · ").append(level);
+            result.append(" · ").append(counts.get(bird)).append(" 条记录\n");
+            if (result.length() > 5000) break;
+        }
+        return result.toString().trim();
+    }
+
+    private QueryTrace requestDeepSeek(String question, String dataSource) throws Exception {
+        if ("ebird".equalsIgnoreCase(dataSource)) return requestEbirdAnswer(question);
         if (apiKey().isEmpty()) throw new Exception("请先设置 DeepSeek API Key");
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().getTime());
         JSONObject preferences = birdPreferences();
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content",
-                "你是鸟友工具箱的专业观鸟助手。今天是 " + today + "。未指定日期时固定查询最近7天。\n"
+                "你是鸟友工具箱的专业观鸟助手。今天是 " + today + "。未指定日期时固定查询最近2天。\n"
                         + "【何时查数据】凡是询问近期或指定日期的鸟种、数量、地点、鸟况、鸟讯、哪里值得看或记录排行，必须先调用 "
                         + "query_bird_records；不得凭常识补充本次数据里没有的鸟名或数量。纯鸟类知识、辨识方法、行为习性可以直接回答。\n"
                         + "【地点优先级】本次问题明确说了省、市、区县、公园或地点时，location_source=user，只使用本次地点，绝不混入偏好；程序会从原始问题校正广州、深圳、杭州等城市所属省份。"
                         + "只有完全没说地点时 location_source=preference，由程序使用偏好省市区；偏好为空时要求用户补充地点。\n"
-                        + "【日期优先级】本次问题明确说了今天、昨天、这两天、最近N天、本周等范围时必须严格按该范围查询；"
-                        + "只有用户完全没说时间时，才使用默认最近7天。\n"
+                        + "【日期优先级】本次问题明确说了今天、今日、昨天、这两天、最近N天、本周等范围时必须严格按该范围查询；"
+                        + "只有用户完全没说时间时，才使用默认最近2天。\n"
+                        + "【地点鸟类问答的证据规则】用户询问某地点有哪些鸟、哪里值得看或鸟况时，记录中心查询结果是唯一事实来源："
+                        + "只列出工具结果明确记录的鸟种、学名、观察次数、最近观察时间、观察月份、观察者数量和地点；缺失字段不得补全。"
+                        + "不得用常识、百科或其他地点的记录替代本次结果；不得把‘可能出现’说成‘已经记录’，不得编造鸟种、数量、热门区域或稀有鸟价值。"
+                        + "工具结果没有相关记录时，必须原样明确回答：‘目前观鸟记录中心没有查询到该地点的相关记录。’可建议扩大查询日期或区域，但不能猜测鸟种。\n"
+                        + "【分析与表述】仅根据返回记录判断常见、稀有、候鸟或留鸟：有频次或月份证据才说明出现特点；"
+                        + "候鸟的最佳月份、留鸟的全年可见性均须有查询结果支持，否则标注‘记录数据未提供，无法判断’。"
+                        + "有记录不等于现在一定能看到，推荐时必须说明基于历史或近期公开记录；鸟类中文名使用中国大陆常用名，行为描述符合生态规律且不超出数据证据。\n"
+                        + "【地点问答输出】使用 Markdown，按以下顺序输出：‘## 📍 地点概况’、‘## 🐦 已记录鸟类’、‘## ⭐ 推荐重点观察’、‘## 📅 最佳观鸟时间’、‘## 📷 观察建议’。"
+                        + "‘已记录鸟类’优先使用表格，列为‘鸟名｜类型｜出现特点’；类型或特点没有数据依据则写‘记录数据未提供’。"
+                        + "推荐重点按数据库记录频率排序；观察建议可提供不依赖数据库事实的通用实践，如清晨观察、安静行走、携带望远镜和相机。"
+                        + "涉及多个地点时，可另给最多3列的表格，列为‘地点、鸟种、保护级别’，不要展示记录数列，鸟种必须来自查询结果。"
                         + "【回答原则】先给简短结论，再列最有用的地点或鸟种；明确实际日期、区域、地点数、记录数和数据来源。"
                         + "有记录不等于现在一定能看到，推荐时说明基于近期公开记录。零结果时建议扩大日期或区域，绝不猜测。"
                         + "【鸟种偏好】优先强调用户关注的鸟种或一级保护动物；用户不关注的常见鸟可在结果中弱化，除非它们是用户问题的直接对象或唯一有效结果。"
@@ -320,13 +494,206 @@ public class MainActivity extends Activity {
         throw new Exception("DeepSeek 多次查询后仍未完成回答");
     }
 
+    private QueryTrace requestEbirdAnswer(String question) throws Exception {
+        String region = ebirdRegionForQuestion(question);
+        String[] dateRange = extractExplicitDateRange(question);
+        JSONArray observations = new JSONArray();
+        String dataWindow;
+        String locationSummary = region;
+        if (region == null) {
+            JSONObject coordinates = geocodeEbirdLocation(question);
+            String path = "geo/recent?lat=" + coordinates.optString("lat") + "&lng="
+                    + coordinates.optString("lon") + "&dist=25&maxResults=100";
+            observations = fetchEbirdObservations("", path);
+            locationSummary = coordinates.optString("display_name", "经纬度附近");
+            dataWindow = "近期观测（经纬度附近 25 公里）";
+        } else if (dateRange == null) {
+            observations = fetchEbirdObservations(region, "recent?maxResults=100");
+            dataWindow = "近期观测（最近 30 天）";
+        } else {
+            Calendar start = parseDate(dateRange[0]);
+            Calendar end = parseDate(dateRange[1]);
+            int days = (int) ((end.getTimeInMillis() - start.getTimeInMillis()) / 86400000L) + 1;
+            if (days < 1 || days > 31) throw new Exception("eBird 历史查询一次最多支持 31 天，请缩小日期范围");
+            for (int i = 0; i < days; i++) {
+                Calendar day = (Calendar) start.clone();
+                day.add(Calendar.DAY_OF_MONTH, i);
+                String path = String.format(Locale.US, "historic/%04d/%02d/%02d?maxResults=100",
+                        day.get(Calendar.YEAR), day.get(Calendar.MONTH) + 1, day.get(Calendar.DAY_OF_MONTH));
+                JSONArray daily = fetchEbirdObservations(region, path);
+                for (int j = 0; j < daily.length(); j++) observations.put(daily.getJSONObject(j));
+            }
+            dataWindow = dateRange[0] + " 至 " + dateRange[1] + " 的历史观测";
+        }
+        StringBuilder evidence = new StringBuilder();
+        for (int i = 0; i < observations.length(); i++) {
+            JSONObject item = observations.getJSONObject(i);
+            evidence.append(item.optString("comName")).append(" | ")
+                    .append(item.optString("sciName")).append(" | ")
+                    .append(item.optString("locName")).append(" | ")
+                    .append(item.optString("obsDt")).append(" | 数量 ")
+                    .append(item.opt("howMany")).append("\n");
+        }
+        if (observations.length() == 0) evidence.append("eBird 没有返回该时间范围内的观测记录。\n");
+        JSONArray messages = new JSONArray()
+                .put(new JSONObject().put("role", "system").put("content", "你是专业观鸟助手。只能依据下面 eBird 返回的观测数据回答，不能调用或补充观鸟记录中心数据，也不能凭常识编造。没有相关数据时明确说明 eBird 没有查询到相关记录。必须区分近期记录、历史记录和迁徙推断；历史记录只能说明该日期范围内有人观察到，不能据此断言当前一定存在。用中文给出鸟名、地点、时间和实用建议。\n数据来源：eBird API；查询范围：" + dataWindow + "\n" + evidence))
+                .put(new JSONObject().put("role", "user").put("content", question));
+        JSONObject preferences = birdPreferences();
+        JSONObject body = new JSONObject().put("model", preferences.optString("model", "deepseek-v4-flash"))
+                .put("messages", messages).put("stream", false)
+                .put("thinking", new JSONObject().put("type", "disabled"));
+        int maxTokens = preferences.optInt("max_tokens", 0); if (maxTokens > 0) body.put("max_tokens", maxTokens);
+        JSONObject response = postDeepSeek(body);
+        String answer = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content").trim();
+        return new QueryTrace(answer, true, "eBird · " + locationSummary + " · " + dataWindow + " · " + observations.length() + " 条", new JSONArray());
+    }
+
+    private JSONArray fetchEbirdObservations(String region, String path) throws Exception {
+        String requestPath = region == null || region.isEmpty()
+                ? "data/obs/" + path
+                : "data/obs/" + region + "/" + path;
+        HttpURLConnection connection = (HttpURLConnection) new URL(EBIRD_API + requestPath).openConnection();
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("X-eBirdApiToken", EBIRD_API_KEY);
+        connection.setConnectTimeout(15000); connection.setReadTimeout(30000);
+        int code = connection.getResponseCode();
+        String raw = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        connection.disconnect();
+        if (code < 200 || code >= 300) throw new Exception("eBird 查询失败（HTTP " + code + "）");
+        return new JSONArray(raw);
+    }
+
+    private static Calendar parseDate(String value) throws Exception {
+        Calendar result = Calendar.getInstance(Locale.US);
+        result.setLenient(false);
+        result.setTime(new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(value));
+        return result;
+    }
+
+    private JSONObject geocodeEbirdLocation(String question) throws Exception {
+        String query = question == null ? "" : question.replaceAll("\\s+", " ").trim();
+        query = query.replaceAll("(?i)(最近|近期|历史|查询|查看|看看|有什么|哪些|鸟类|鸟种|鸟|观鸟|记录|数据|迁徙|今天|昨天|前天|\u6700\u8fd1[0-9一二两三四五六七八九十]+天)", " ")
+                .replaceAll("[，。！？、：:；;（）()]+", " ").trim();
+        if (query.isEmpty()) throw new Exception("请在问题中写明要查询的国家、城市或地点");
+        String cacheKey = query.toLowerCase(Locale.ROOT);
+        JSONObject cached = cachedEbirdLocation(cacheKey);
+        if (cached != null) return cached;
+        JSONObject known = knownEbirdLocation(query);
+        if (known != null) { cacheEbirdLocation(cacheKey, known); return known; }
+        try {
+            Geocoder geocoder = new Geocoder(this, Locale.getDefault());
+            List<Address> addresses = geocoder.getFromLocationName(query, 1);
+            if (addresses != null && !addresses.isEmpty()) {
+                Address address = addresses.get(0);
+                JSONObject result = new JSONObject().put("lat", address.getLatitude()).put("lon", address.getLongitude())
+                        .put("display_name", address.getAddressLine(0) == null ? query : address.getAddressLine(0));
+                cacheEbirdLocation(cacheKey, result);
+                return result;
+            }
+        } catch (Exception ignored) {
+            // Fall through to the HTTPS geocoder.
+        }
+        String endpoint = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="
+                + URLEncoder.encode(query, "UTF-8");
+        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("User-Agent", "AI-Bird-Assistant/5.0 (bird observation app)");
+        connection.setConnectTimeout(15000); connection.setReadTimeout(30000);
+        int code = connection.getResponseCode();
+        String raw = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        connection.disconnect();
+        if (code < 200 || code >= 300) throw new Exception("地点解析服务暂时不可用，请稍后重试或补充更完整的国家、城市名称");
+        JSONArray matches = new JSONArray(raw);
+        if (matches.length() == 0) throw new Exception("没有找到“" + query + "”的位置，请补充国家或城市名称");
+        JSONObject result = matches.getJSONObject(0);
+        cacheEbirdLocation(cacheKey, result);
+        return result;
+    }
+
+    private JSONObject cachedEbirdLocation(String key) {
+        try {
+            String raw = prefs().getString("ebird_geocode_" + key.hashCode(), "");
+            if (raw.isEmpty()) return null;
+            JSONObject result = new JSONObject(raw);
+            return result.has("lat") && result.has("lon") ? result : null;
+        } catch (Exception ignored) { return null; }
+    }
+
+    private void cacheEbirdLocation(String key, JSONObject value) {
+        try {
+            JSONObject cached = new JSONObject().put("lat", value.optDouble("lat"))
+                    .put("lon", value.optDouble("lon"))
+                    .put("display_name", value.optString("display_name", key));
+            prefs().edit().putString("ebird_geocode_" + key.hashCode(), cached.toString()).apply();
+        } catch (Exception ignored) { }
+    }
+
+    private static JSONObject knownEbirdLocation(String query) throws Exception {
+        String value = query.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+        String[][] offlineCities = {
+                {"广州", "23.1291", "113.2644"}, {"深圳", "22.5431", "114.0579"}, {"珠海", "22.2707", "113.5767"}, {"佛山", "23.0215", "113.1214"}, {"东莞", "23.0207", "113.7518"}, {"中山", "22.5176", "113.3928"}, {"惠州", "23.1115", "114.4168"}, {"汕头", "23.3535", "116.6822"}, {"湛江", "21.2707", "110.3594"},
+                {"杭州", "30.2741", "120.1551"}, {"宁波", "29.8683", "121.5440"}, {"温州", "27.9938", "120.6994"}, {"嘉兴", "30.7461", "120.7556"}, {"绍兴", "30.0303", "120.5802"}, {"湖州", "30.8943", "120.0868"}, {"金华", "29.0791", "119.6474"},
+                {"南京", "32.0603", "118.7969"}, {"苏州", "31.2989", "120.5853"}, {"无锡", "31.4900", "120.3119"}, {"常州", "31.8112", "119.9741"}, {"南通", "31.9802", "120.8943"}, {"扬州", "32.3942", "119.4129"}, {"徐州", "34.2044", "117.2858"}, {"连云港", "34.5967", "119.2220"},
+                {"青岛", "36.0671", "120.3826"}, {"济南", "36.6512", "117.1201"}, {"烟台", "37.4638", "121.4479"}, {"威海", "37.5131", "122.1204"}, {"潍坊", "36.7069", "119.1618"}, {"泰安", "36.2003", "117.0876"},
+                {"成都", "30.5728", "104.0668"}, {"重庆", "29.5630", "106.5516"}, {"昆明", "25.0389", "102.7183"}, {"大理", "25.6065", "100.2676"}, {"丽江", "26.8550", "100.2278"}, {"贵阳", "26.6470", "106.6302"}, {"拉萨", "29.6500", "91.1000"},
+                {"武汉", "30.5928", "114.3055"}, {"长沙", "28.2282", "112.9388"}, {"张家界", "29.1171", "110.4792"}, {"郑州", "34.7473", "113.6249"}, {"洛阳", "34.6197", "112.4540"}, {"南昌", "28.6820", "115.8579"}, {"婺源", "29.2480", "117.8618"}, {"合肥", "31.8206", "117.2272"}, {"黄山", "29.7152", "118.3387"},
+                {"西安", "34.3416", "108.9398"}, {"兰州", "36.0611", "103.8343"}, {"西宁", "36.6171", "101.7782"}, {"银川", "38.4872", "106.2309"}, {"乌鲁木齐", "43.8256", "87.6168"}, {"呼和浩特", "40.8426", "111.7492"}, {"太原", "37.8706", "112.5489"}, {"石家庄", "38.0428", "114.5149"}, {"秦皇岛", "39.9354", "119.5996"},
+                {"大连", "38.9140", "121.6147"}, {"沈阳", "41.8057", "123.4315"}, {"长春", "43.8171", "125.3235"}, {"哈尔滨", "45.8038", "126.5350"}, {"厦门", "24.4798", "118.0894"}, {"福州", "26.0745", "119.2965"}, {"泉州", "24.8741", "118.6757"}, {"桂林", "25.2736", "110.2900"}, {"南宁", "22.8170", "108.3665"}, {"海口", "20.0440", "110.1999"}, {"三亚", "18.2528", "109.5119"},
+                {"札幌", "43.0618", "141.3545"}, {"大阪", "34.6937", "135.5023"}, {"京都", "35.0116", "135.7681"}, {"福冈", "33.5904", "130.4017"}, {"名古屋", "35.1815", "136.9066"}, {"冲绳", "26.2124", "127.6809"},
+                {"曼谷", "13.7563", "100.5018"}, {"清迈", "18.7883", "98.9853"}, {"普吉", "7.8804", "98.3923"}, {"新德里", "28.6139", "77.2090"}, {"孟买", "19.0760", "72.8777"}, {"班加罗尔", "12.9716", "77.5946"}, {"加尔各答", "22.5726", "88.3639"}, {"金奈", "13.0827", "80.2707"},
+                {"吉隆坡", "3.1390", "101.6869"}, {"槟城", "5.4141", "100.3288"}, {"亚庇", "5.9804", "116.0735"}, {"古晋", "1.5533", "110.3592"}, {"科伦坡", "6.9271", "79.8612"}, {"康提", "7.2906", "80.6337"}, {"河内", "21.0278", "105.8342"}, {"胡志明", "10.8231", "106.6297"}, {"岘港", "16.0544", "108.2022"},
+                {"雅加达", "-6.2088", "106.8456"}, {"巴厘", "-8.4095", "115.1889"}, {"登巴萨", "-8.6705", "115.2126"}, {"泗水", "-7.2575", "112.7521"}, {"日惹", "-7.7956", "110.3695"},
+                {"墨尔本", "-37.8136", "144.9631"}, {"布里斯班", "-27.4698", "153.0251"}, {"珀斯", "-31.9505", "115.8605"}, {"阿德莱德", "-34.9285", "138.6007"}, {"堪培拉", "-35.2809", "149.1300"}, {"霍巴特", "-42.8821", "147.3272"},
+                {"西雅图", "47.6062", "-122.3321"}, {"洛杉矶", "34.0522", "-118.2437"}, {"旧金山", "37.7749", "-122.4194"}, {"芝加哥", "41.8781", "-87.6298"}, {"波士顿", "42.3601", "-71.0589"}, {"华盛顿", "38.9072", "-77.0369"}, {"迈阿密", "25.7617", "-80.1918"}, {"休斯敦", "29.7604", "-95.3698"}, {"丹佛", "39.7392", "-104.9903"}
+        };
+        for (String[] city : offlineCities) {
+            if (value.contains(city[0])) return new JSONObject().put("lat", city[1]).put("lon", city[2]).put("display_name", city[0]);
+        }
+        String name = null; double lat = 0; double lon = 0;
+        if (value.contains("日本北海道") || value.contains("北海道")) { name = "日本北海道"; lat = 43.0646; lon = 141.3468; }
+        else if (value.contains("日本东京") || value.contains("东京")) { name = "日本东京"; lat = 35.6762; lon = 139.6503; }
+        else if (value.contains("韩国首尔") || value.contains("首尔")) { name = "韩国首尔"; lat = 37.5665; lon = 126.9780; }
+        else if (value.contains("美国纽约") || value.contains("纽约")) { name = "美国纽约"; lat = 40.7128; lon = -74.0060; }
+        else if (value.contains("英国伦敦") || value.contains("伦敦")) { name = "英国伦敦"; lat = 51.5074; lon = -0.1278; }
+        else if (value.contains("法国巴黎") || value.contains("巴黎")) { name = "法国巴黎"; lat = 48.8566; lon = 2.3522; }
+        else if (value.contains("新加坡")) { name = "新加坡"; lat = 1.3521; lon = 103.8198; }
+        else if (value.contains("澳大利亚悉尼") || value.contains("悉尼")) { name = "澳大利亚悉尼"; lat = -33.8688; lon = 151.2093; }
+        if (name == null) return null;
+        return new JSONObject().put("lat", lat).put("lon", lon).put("display_name", name);
+    }
+
+    private String ebirdRegionForQuestion(String question) throws Exception {
+        String[] location = extractExplicitLocation(question);
+        String value = (location[0] + location[1] + question).replaceAll("\\s+", "");
+        // Offline eBird region library: countries requested for the initial release,
+        // plus high-frequency first-level regions. These resolve without a geocoder.
+        if (value.contains("北海道")) return "JP-01";
+        if (value.contains("东京") || value.contains("東京都")) return "JP-13";
+        if (value.contains("纽约州")) return "US-NY";
+        if (value.contains("加利福尼亚") || value.contains("加州")) return "US-CA";
+        if (value.contains("新南威尔士")) return "AU-NSW";
+        if (value.contains("维多利亚州")) return "AU-VIC";
+        if (value.contains("北京")) return "CN-11";
+        if (value.contains("上海")) return "CN-31";
+        if (value.contains("天津")) return "CN-12";
+        if (value.contains("重庆")) return "CN-50";
+        String[][] countries = {
+                {"中国", "CN"}, {"日本", "JP"}, {"泰国", "TH"}, {"印度", "IN"},
+                {"马来西亚", "MY"}, {"斯里兰卡", "LK"}, {"越南", "VN"},
+                {"印度尼西亚", "ID"}, {"印尼", "ID"}, {"澳大利亚", "AU"},
+                {"澳洲", "AU"}, {"美国", "US"}, {"美利坚", "US"}
+        };
+        for (String[] country : countries) if (value.contains(country[0])) return country[1];
+        return null;
+    }
+
     private JSONObject callDeepSeek(JSONArray messages, boolean forceRecordsQuery) throws Exception {
         JSONObject preferences = birdPreferences();
         String model = preferences.optString("model", "deepseek-v4-flash");
         int maxTokens = preferences.optInt("max_tokens", 0);
         JSONObject properties = new JSONObject()
                 .put("location_source", new JSONObject().put("type", "string").put("enum", new JSONArray().put("user").put("preference")).put("description", "本次问题说了地点用 user，完全没说地点才用 preference"))
-                .put("date_source", new JSONObject().put("type", "string").put("enum", new JSONArray().put("user").put("recent_7_days")).put("description", "本次问题给了明确时间用 user，否则用 recent_7_days"))
+                .put("date_source", new JSONObject().put("type", "string").put("enum", new JSONArray().put("user").put("recent_2_days")).put("description", "本次问题给了明确时间用 user，否则用 recent_2_days"))
                 .put("start_date", new JSONObject().put("type", "string").put("description", "date_source=user 时填写 YYYY-MM-DD，否则留空"))
                 .put("end_date", new JSONObject().put("type", "string").put("description", "date_source=user 时填写 YYYY-MM-DD，否则留空"))
                 .put("province", new JSONObject().put("type", "string").put("description", "location_source=user 时填写省或直辖市，否则留空"))
@@ -360,7 +727,7 @@ public class MainActivity extends Activity {
 
     private static boolean requiresBirdRecords(String question) {
         String value = question == null ? "" : question.replaceAll("\\s+", "");
-        boolean timeSensitive = value.matches(".*(最近|近期|今天|昨日|昨天|前天|这两天|这几天|近[一二三四五六七八九十0-9]+天|本周|这周|本月|这个月|今年).*?");
+        boolean timeSensitive = value.matches(".*(最近|近期|今天|今日|当天|当日|昨日|昨天|前天|这两天|这几天|近[一二三四五六七八九十0-9]+天|本周|这周|本月|这个月|今年).*?");
         boolean birdContext = value.matches(".*(鸟|观测|观察|记录|鸟讯|鸟况|值得看|能看到|去哪看|去哪里看).*?");
         boolean liveDataQuestion = value.matches(".*(有什么鸟|有哪些鸟|哪些鸟|哪里有鸟|哪里能看|去哪看鸟|去哪里看鸟|能看到什么|值得看什么|鸟讯|鸟况|观鸟记录|观察记录|观测记录|记录最多|鸟种最多|近期记录|最新记录).*?");
         return liveDataQuestion || (timeSensitive && birdContext);
@@ -476,7 +843,7 @@ public class MainActivity extends Activity {
         if (originalProvince.isEmpty()) throw new Exception("未指定省份，且观鸟偏好中没有默认省份；请先设置偏好或在问题中说明地点");
         Calendar calendar = Calendar.getInstance();
         boolean usePreferenceDate = "preference".equalsIgnoreCase(arguments.optString("date_source"))
-                || "recent_7_days".equalsIgnoreCase(arguments.optString("date_source"))
+                || "recent_2_days".equalsIgnoreCase(arguments.optString("date_source"))
                 || (arguments.optString("date_source").trim().isEmpty()
                 && (arguments.optString("start_date").trim().isEmpty() || arguments.optString("end_date").trim().isEmpty()));
         String endDate;
@@ -489,7 +856,7 @@ public class MainActivity extends Activity {
             usePreferenceDate = false;
         } else if (usePreferenceDate) {
             endDate = formatDate(calendar);
-            calendar.add(Calendar.DAY_OF_MONTH, -6);
+            calendar.add(Calendar.DAY_OF_MONTH, -1);
             startDate = formatDate(calendar);
         } else {
             endDate = arguments.optString("end_date").trim();
@@ -581,8 +948,8 @@ public class MainActivity extends Activity {
                         .put("district", district).put("location_keyword", keyword)
                         .put("start_date", startDate).put("end_date", endDate)
                         .put("location_source", usePreferenceLocation ? "preference" : "user")
-                        .put("date_source", usePreferenceDate ? "recent_7_days" : "user")
-                        .put("fixed_recent_days", usePreferenceDate ? 7 : JSONObject.NULL)
+                        .put("date_source", usePreferenceDate ? "recent_2_days" : "user")
+                        .put("fixed_recent_days", usePreferenceDate ? 2 : JSONObject.NULL)
                         .put("region_corrected", !province.equals(originalProvince) || !city.equals(originalCity)))
                 .put("record_total", details.size())
                 .put("location_total", grouped.size())
@@ -593,7 +960,7 @@ public class MainActivity extends Activity {
     private static String[] extractExplicitDateRange(String question) {
         String text = question == null ? "" : question.replaceAll("\\s+", "");
         Calendar today = Calendar.getInstance();
-        if (text.contains("今天")) {
+        if (text.contains("今天") || text.contains("今日") || text.contains("当天") || text.contains("当日")) {
             String day = formatDate(today);
             return new String[]{day, day};
         }
@@ -616,7 +983,41 @@ public class MainActivity extends Activity {
                 return new String[]{formatDate(today), end};
             }
         }
+        // eBird 的 historic 接口按日查询；识别常见的中文/ISO 日期表达。
+        Matcher fullDates = Pattern.compile("(\\d{4})[-/.年](\\d{1,2})[-/.月](\\d{1,2})日?").matcher(text);
+        List<String> dates = new ArrayList<>();
+        while (fullDates.find()) {
+            String date = buildDate(fullDates.group(1), fullDates.group(2), fullDates.group(3));
+            if (date != null) dates.add(date);
+        }
+        if (dates.size() >= 2) return new String[]{dates.get(0), dates.get(1)};
+        if (dates.size() == 1) return new String[]{dates.get(0), dates.get(0)};
+        Matcher month = Pattern.compile("(\\d{4})年(\\d{1,2})月").matcher(text);
+        if (month.find()) {
+            int year = Integer.parseInt(month.group(1));
+            int monthValue = Integer.parseInt(month.group(2));
+            if (monthValue >= 1 && monthValue <= 12) {
+                Calendar first = Calendar.getInstance(Locale.US);
+                first.clear(); first.set(year, monthValue - 1, 1);
+                Calendar last = (Calendar) first.clone();
+                last.set(Calendar.DAY_OF_MONTH, last.getActualMaximum(Calendar.DAY_OF_MONTH));
+                return new String[]{formatDate(first), formatDate(last)};
+            }
+        }
         return null;
+    }
+
+    private static String buildDate(String year, String month, String day) {
+        try {
+            Calendar value = Calendar.getInstance(Locale.US);
+            value.clear();
+            value.setLenient(false);
+            value.set(Integer.parseInt(year), Integer.parseInt(month) - 1, Integer.parseInt(day));
+            value.getTime();
+            return formatDate(value);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static int parseChineseNumber(String value) {
@@ -2212,6 +2613,11 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void copyText(String text) {
+            copyTextToClipboard(text);
+        }
+
+        @JavascriptInterface
         public String savePreferences(String province, String city, String district, String blacklist,
                 String model, String maxTokens, String interestedBirds, String uninterestedBirds) {
             return saveBirdPreferences(province, city, district, blacklist, model, maxTokens, interestedBirds, uninterestedBirds);
@@ -2256,13 +2662,16 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void ask(String raw) {
+        public void ask(String raw) { ask(raw, "birdreport"); }
+
+        @JavascriptInterface
+        public void ask(String raw, String source) {
             final String question = raw == null ? "" : raw.trim();
             executor.execute(() -> {
                 JSONObject result = new JSONObject();
                 try {
                     if (question.isEmpty()) throw new Exception("请输入你想了解的鸟类问题");
-                    QueryTrace trace = requestDeepSeek(question);
+                    QueryTrace trace = requestDeepSeek(question, source);
                     saveExchange(question, trace.answer, trace);
                     result.put("ok", true).put("answer", trace.answer)
                             .put("recordsQueried", trace.queried)
@@ -2280,5 +2689,6 @@ public class MainActivity extends Activity {
                 callback("onAiResult", result);
             });
         }
+
     }
 }

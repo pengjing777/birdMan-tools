@@ -8,7 +8,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/kingfisher_icon"
-        android:label="AI 观鸟"
+        android:label="AI 观鸟助手"
         android:supportsRtl="true"
         android:theme="@style/Theme.AiBirding"
         android:usesCleartextTraffic="false"

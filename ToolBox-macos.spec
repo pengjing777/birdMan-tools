@@ -62,7 +62,7 @@ app = BUNDLE(
     icon="assets/toolbox_kingfisher_icon_1024.png",
     bundle_identifier="local.birds-tools",
     info_plist={
-        "CFBundleName": "BirdsTools",
+        "CFBundleName": "鸟友工具箱",
         "CFBundleDisplayName": "鸟友工具箱",
         "NSHighResolutionCapable": True,
     },

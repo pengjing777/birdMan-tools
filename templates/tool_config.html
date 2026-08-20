@@ -214,6 +214,7 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="max-width:180px;"><label>超时（秒）</label><input type="number" id="f_deepseek_timeout" min="10" max="180" placeholder="90"></div>
+                    <div class="form-group" style="max-width:180px;"><label>max_tokens（可留空）</label><input type="number" id="f_deepseek_max_tokens" min="1" max="8192" placeholder="留空则不传输"></div>
                 </div>
             </div>
         </div>
@@ -318,6 +319,7 @@
         document.getElementById('f_deepseek_model').value = deepseek.model || 'deepseek-chat';
         document.getElementById('f_deepseek_base_url').value = deepseek.base_url || 'https://api.deepseek.com';
         document.getElementById('f_deepseek_timeout').value = deepseek.timeout || 90;
+        document.getElementById('f_deepseek_max_tokens').value = deepseek.max_tokens || '';
         // 桌面 Emoji 助手
         var assistant = cfg.desktop_assistant || {};
         document.getElementById('f_assistant_enabled').checked = assistant.enabled !== false;
@@ -447,7 +449,8 @@
                 api_key: document.getElementById('f_deepseek_api_key').value.trim(),
                 model: document.getElementById('f_deepseek_model').value.trim() || 'deepseek-chat',
                 base_url: document.getElementById('f_deepseek_base_url').value.trim() || 'https://api.deepseek.com',
-                timeout: Number(document.getElementById('f_deepseek_timeout').value || 90)
+                timeout: Number(document.getElementById('f_deepseek_timeout').value || 90),
+                max_tokens: Number(document.getElementById('f_deepseek_max_tokens').value || 0)
             },
             desktop_assistant: collectAssistantConfig(),
         };

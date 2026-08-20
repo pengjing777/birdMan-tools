@@ -182,6 +182,13 @@ TOOLS = [
         "description": "按保护鸟种和省市区查询观鸟记录，并跳转地图查看观测位置。",
         "icon": "fa-binoculars",
         "color": "#0f766e"
+    },
+    {
+        "id": "travel-recommendation",
+        "name": "旅行推荐",
+        "description": "按城市和天数生成结合近期鸟类记录的观鸟旅行攻略。",
+        "icon": "fa-route",
+        "color": "#d97706"
     }
 ]
 
@@ -339,7 +346,11 @@ def bookmarks_page():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """获取全部配置"""
-    return jsonify(_manager.get_all())
+    config = _manager.get_all()
+    deepseek = dict(config.get("deepseek") or {})
+    deepseek["api_key_configured"] = bool(str(deepseek.get("api_key") or "").strip())
+    config["deepseek"] = deepseek
+    return jsonify(config)
 
 @app.route('/api/config', methods=['PUT'])
 def update_config():
@@ -837,6 +848,9 @@ def api_set_network():
 # ---- 鸟种记录 ----
 
 BIRDREPORT_API = "https://api.birdreport.cn/"
+EBIRD_API = "https://api.ebird.org/v2/"
+# Private desktop build key supplied by the user. Use a server-side proxy before public distribution.
+EBIRD_API_KEY = "484c79c2-9614-4b36-ad14-1732dbbc12ef"
 BIRDREPORT_PUBLIC_KEY = (
     "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCvxXa98E1uWXnBzXkS2yHUfnBM6n3PCwLdfIox03T91joBvjtoDqiQ5x3t"
     "TOfpHs3LtiqMMEafls6b0YWtgB1dse1W5m+FpeusVkCOkQxB4SZDH6tuerIknnmB/Hsq5wgEkIvO5Pff9biig6AyoAkdWp"
@@ -2292,16 +2306,30 @@ def api_bird_records():
 
 def _deepseek_config():
     cfg = _manager.get_all().get("deepseek") or {}
+    model = str(cfg.get("model") or "deepseek-v4-flash").strip()
+    if model not in {"deepseek-v4-flash", "deepseek-v4-pro"}:
+        model = "deepseek-v4-flash"
     try:
         timeout = int(cfg.get("timeout") or 90)
     except (TypeError, ValueError):
         timeout = 90
     return {
-        "model": str(cfg.get("model") or "deepseek-chat").strip(),
+        "model": model,
         "api_key": str(cfg.get("api_key") or "").strip(),
         "base_url": str(cfg.get("base_url") or "https://api.deepseek.com").strip().rstrip("/"),
         "timeout": max(10, min(timeout, 180)),
+        "max_tokens": max(0, min(int(cfg.get("max_tokens") or 0), 8192)) if str(cfg.get("max_tokens") or "").strip().isdigit() else 0,
     }
+
+
+def _ai_bird_preferences():
+    defaults = {
+        "province": "", "city": "", "district": "",
+        "interested_birds": "鸮,一级保护动物",
+        "uninterested_birds": "麻雀,白头鹎,绿头鸭,鸳鸯,珠颈斑鸠,喜鹊,灰喜鹊,灰椋鸟,大嘴乌鸦,小鷿鷈,凤头鷿鷈,普通鸬鹚,鸿雁,灰头绿啄木鸟,大斑啄木鸟,普通翠鸟,家燕,戴胜,白鹭,苍鹭",
+    }
+    saved = _manager.get_all().get("ai_bird_preferences") or {}
+    return {key: str(saved.get(key, value) or "").strip() for key, value in defaults.items()}
 
 
 _AI_CITY_ALIASES = {
@@ -2356,23 +2384,26 @@ def _extract_ai_landmark(question):
 
 def _requires_ai_bird_records(question):
     value = re.sub(r"\s+", "", str(question or ""))
-    time_sensitive = re.search(r"最近|近期|今天|昨日|昨天|前天|这两天|这几天|近[一二三四五六七八九十\d]+天|本周|这周|本月|这个月|今年", value)
+    time_sensitive = re.search(r"最近|近期|今天|今日|当天|当日|昨日|昨天|前天|这两天|这几天|近[一二三四五六七八九十\d]+天|本周|这周|本月|这个月|今年", value)
     bird_context = re.search(r"鸟|观测|观察|记录|鸟讯|鸟况|值得看|能看到|去哪看|去哪里看", value)
     live_question = re.search(r"有什么鸟|有哪些鸟|哪些鸟|哪里有鸟|哪里能看|去哪看鸟|去哪里看鸟|能看到什么|值得看什么|鸟讯|鸟况|观鸟记录|观察记录|观测记录|记录最多|鸟种最多|近期记录|最新记录", value)
     return bool(live_question or (time_sensitive and bird_context))
 
 
 def _bird_ai_system_prompt(today):
+    preferences = _ai_bird_preferences()
     return (
         f"你是鸟友工具箱的专业观鸟助手。今天是 {today}。\n"
         "【何时查数据】凡是询问近期/指定日期的鸟种、数量、地点、鸟况、鸟讯、哪里值得看或记录排行，必须先调用 "
         "query_bird_records；不得凭常识补充本次查询中没有出现的鸟名或数量。纯鸟类知识、辨识方法、行为习性问题可以直接回答。\n"
         "【地点】必须根据本次问题确定查询地点；用户没有说明地点时不要猜测，要求用户补充。城市必须尽量补全所属省份。\n"
-        "【日期优先级】先看本次问题，再结合历史对话补全省略的日期；如果明确说了‘今天’、‘昨天’、‘这两天’、最近N天、本周等范围，必须严格按该范围换算 YYYY-MM-DD；"
-        "只有整个对话都没有说明时间时，才使用程序默认的最近7天。\n"
-        "【回答原则】先给简短结论，再按地点或鸟种列出最有用的结果；明确实际查询日期、区域、地点数、记录数和数据来源。"
-        "‘有记录’不等于现在一定能看到，推荐时说明这是基于近期公开记录。零结果时说明实际条件并建议扩大日期或区域，不得猜测。"
-        "使用简洁中文和短列表，不堆砌标题，不使用宽表格。"
+        "【日期优先级】先看本次问题，再结合历史对话补全省略的日期；如果明确说了‘今天/今日’、‘昨天’、‘这两天’、最近N天、本周等范围，必须严格按该范围换算 YYYY-MM-DD；"
+        "如果用户没有说明查询几天，默认只查询最近2天，并在回答中明确告知查询范围。\n"
+        "【证据规则】地点鸟类问题只能回答本次记录中心工具明确返回的鸟种和字段，不得用常识、百科或其他地点记录补全，不得编造鸟种、数量、时间、区域或概率。"
+        "没有相关记录时必须明确回答‘目前观鸟记录中心没有查询到该地点的相关记录。’，不要猜测。‘有记录’不等于现在一定能看到。\n"
+        "【分析规则】只有返回数据支持时，才能判断常见、稀有、候鸟、留鸟、最佳月份或观察频率；缺失信息写‘记录数据未提供，无法判断’。鸟名使用中国大陆常用中文名。\n"
+        "【回答格式】地点问题按‘## 📍 地点概况’、‘## 🐦 已记录鸟类’、‘## ⭐ 推荐重点观察’、‘## 📅 最佳观鸟时间’、‘## 📷 观察建议’输出；已记录鸟类优先使用‘鸟名｜类型｜出现特点’表格，推荐重点按记录频率排序。通用观察建议可以给出，但必须和数据库事实区分。"
+        f"【鸟种偏好】优先突出关注鸟种或一级保护动物；不关注鸟种在地点明细中不展示，除非用户主动询问。关注鸟种：{preferences['interested_birds']}。不关注鸟种：{preferences['uninterested_birds']}。"
     )
 
 
@@ -2409,7 +2440,7 @@ def _extract_ai_date_range(question, today):
             return day, day, "user"
         except ValueError:
             pass
-    if re.search(r"今天", text):
+    if re.search(r"今天|今日|当天|当日", text):
         return today, today, "user"
     if re.search(r"昨天|昨日", text):
         day = today - timedelta(days=1)
@@ -2468,9 +2499,10 @@ def _ai_bird_records_tool(arguments, question="", conversation_context=""):
         district = str(arguments.get("district") or "").strip() if explicit_city else ""
         location_keyword = explicit_landmark or str(arguments.get("location_keyword") or "").strip()
     else:
-        province = str(arguments.get("province") or "").strip()
-        city = str(arguments.get("city") or "").strip()
-        district = str(arguments.get("district") or "").strip()
+        preferences = _ai_bird_preferences()
+        province = preferences["province"] or str(arguments.get("province") or "").strip()
+        city = preferences["city"] or str(arguments.get("city") or "").strip()
+        district = preferences["district"] or str(arguments.get("district") or "").strip()
         location_keyword = str(arguments.get("location_keyword") or "").strip()
     # 日期同样优先当前问题；“那这两天呢”会从当前问题得到两天范围。
     detected_dates = _extract_ai_date_range(question, today)
@@ -2481,10 +2513,10 @@ def _ai_bird_records_tool(arguments, question="", conversation_context=""):
         start_date = start_day.strftime("%Y-%m-%d")
         end_date = end_day.strftime("%Y-%m-%d")
     else:
-        # 没有明确时间时固定使用最近 7 天；不采信模型可能误填的日期。
+        # 没有明确时间时固定使用最近 2 天；不采信模型可能误填的日期。
         end_date = today.strftime("%Y-%m-%d")
-        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
-        date_source = "recent_7_days"
+        start_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        date_source = "recent_2_days"
     validate_bird_dates(start_date, end_date)
     if not province:
         raise ValueError("未指定查询地点，请在问题中说明省份、城市、公园或其他地点")
@@ -2529,9 +2561,9 @@ def _ai_bird_records_tool(arguments, question="", conversation_context=""):
             "location_keyword": location_keyword,
             "start_date": start_date,
             "end_date": end_date,
-            "location_source": "user",
+            "location_source": "user" if explicit_question_location else "preference",
             "date_source": date_source,
-            "fixed_recent_days": 7 if date_source == "recent_7_days" else None,
+            "fixed_recent_days": 2 if date_source == "recent_2_days" else None,
         },
         "record_total": len(details),
         "location_total": len(grouped),
@@ -2548,6 +2580,7 @@ def _call_deepseek(messages, force_records_query=False):
         "model": cfg["model"],
         "messages": messages,
         "temperature": 0.2,
+        "thinking": {"type": "disabled"},
         "tools": [{
             "type": "function",
             "function": {
@@ -2556,8 +2589,8 @@ def _call_deepseek(messages, force_records_query=False):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "location_source": {"type": "string", "enum": ["user"], "description": "始终使用本次问题中的地点"},
-                        "date_source": {"type": "string", "enum": ["user", "recent_7_days"], "description": "仅作记录，程序会根据用户原话最终确定日期"},
+            "location_source": {"type": "string", "enum": ["user", "preference"], "description": "本次问题明确地点用 user，否则用 preference"},
+                        "date_source": {"type": "string", "enum": ["user", "recent_2_days"], "description": "仅作记录，程序会根据用户原话最终确定日期"},
                         "start_date": {"type": "string", "description": "可填写 YYYY-MM-DD，但程序优先解析用户原话"},
                         "end_date": {"type": "string", "description": "可填写 YYYY-MM-DD，但程序优先解析用户原话"},
                         "province": {"type": "string", "description": "本次查询省或直辖市"},
@@ -2573,6 +2606,8 @@ def _call_deepseek(messages, force_records_query=False):
         "tool_choice": ({"type": "function", "function": {"name": "query_bird_records"}}
                         if force_records_query else "auto"),
     }
+    if cfg["max_tokens"]:
+        payload["max_tokens"] = cfg["max_tokens"]
     response = None
     retryable_statuses = {429, 500, 502, 503, 504}
     for attempt in range(3):
@@ -2622,12 +2657,354 @@ def _call_deepseek(messages, force_records_query=False):
     return response.json()
 
 
+def _ebird_region_for_question(question):
+    text = re.sub(r"\s+", "", str(question or ""))
+    if any(alias in text for alias in _AI_CITY_ALIASES):
+        return "CN"
+    for alias, code in (("北海道", "JP-01"), ("东京", "JP-13"), ("纽约州", "US-NY"),
+                        ("加利福尼亚", "US-CA"), ("加州", "US-CA"), ("新南威尔士", "AU-NSW")):
+        if alias in text:
+            return code
+    for alias, code in (("北京", "CN-11"), ("上海", "CN-31"), ("天津", "CN-12"), ("重庆", "CN-50"),
+                        ("中国", "CN"), ("日本", "JP"), ("泰国", "TH"), ("印度", "IN"),
+                        ("马来西亚", "MY"), ("斯里兰卡", "LK"), ("越南", "VN"), ("印度尼西亚", "ID"),
+                        ("印尼", "ID"), ("澳大利亚", "AU"), ("澳洲", "AU"), ("美国", "US"),
+                        ("札幌", "JP"), ("大阪", "JP"), ("京都", "JP"), ("曼谷", "TH"), ("清迈", "TH"),
+                        ("吉隆坡", "MY"), ("槟城", "MY"), ("河内", "VN"), ("胡志明", "VN"),
+                        ("雅加达", "ID"), ("巴厘", "ID"), ("悉尼", "AU"), ("墨尔本", "AU"),
+                        ("洛杉矶", "US"), ("旧金山", "US"), ("纽约", "US"), ("西雅图", "US")):
+        if alias in text:
+            return code
+    return None
+
+
+def _ebird_answer(question):
+    region = _ebird_region_for_question(question)
+    if not region:
+        raise ValueError("eBird 离线地点库暂未识别该地点，请补充所属国家，或使用北京、北海道、东京、纽约州等已收录地区")
+    response = requests.get(
+        f"{EBIRD_API}data/obs/{region}/recent",
+        params={"maxResults": 100}, headers={"X-eBirdApiToken": EBIRD_API_KEY}, timeout=30,
+    )
+    if not response.ok:
+        raise RuntimeError(f"eBird 查询失败（HTTP {response.status_code}）")
+    observations = response.json()
+    evidence = "\n".join(
+        f"{item.get('comName', '')} | {item.get('sciName', '')} | {item.get('locName', '')} | {item.get('obsDt', '')} | 数量 {item.get('howMany', '')}"
+        for item in observations
+    ) or "eBird 没有返回近期观测记录。"
+    cfg = _deepseek_config()
+    if not cfg["api_key"]:
+        raise RuntimeError("尚未配置 DeepSeek API Key，请先在配置管理中填写")
+    messages = [
+        {"role": "system", "content": "你是专业观鸟助手。只能依据下面 eBird 返回的近期观测数据回答，不能补充观鸟记录中心数据或凭常识编造。必须说明这是近期公开记录，不等于当前一定能看到。数据来源：eBird API。\n" + evidence[:30000]},
+        {"role": "user", "content": question},
+    ]
+    payload = {"model": cfg["model"], "messages": messages, "stream": False, "thinking": {"type": "disabled"}}
+    if cfg["max_tokens"]:
+        payload["max_tokens"] = cfg["max_tokens"]
+    answer_response = requests.post(f"{cfg['base_url']}/chat/completions", headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"}, json=payload, timeout=cfg["timeout"])
+    if not answer_response.ok:
+        raise RuntimeError(f"DeepSeek 请求失败（{answer_response.status_code}）")
+    answer = ((answer_response.json().get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
+    if not answer:
+        raise RuntimeError("DeepSeek 没有返回回答")
+    return answer, f"eBird · {region} · 近期观测 {len(observations)} 条"
+
+
+_TRAVEL_EBIRD_CITY_ALIASES = {
+    "东京": "JP-13", "东京市": "JP-13", "Tokyo": "JP-13",
+    "大阪": "JP-27", "京都": "JP-26", "北海道": "JP-01", "札幌": "JP-01",
+    "纽约": "US-NY", "纽约州": "US-NY", "New York": "US-NY",
+    "洛杉矶": "US-CA", "旧金山": "US-CA", "加州": "US-CA", "California": "US-CA",
+    "悉尼": "AU-NSW", "新南威尔士": "AU-NSW", "墨尔本": "AU-VIC",
+    "曼谷": "TH-10", "清迈": "TH-50", "吉隆坡": "MY-14", "槟城": "MY-07",
+    "新加坡": "SG", "河内": "VN-HN", "胡志明市": "VN-SG", "巴厘岛": "ID-BA",
+}
+
+
+def _travel_ebird_region(city, country_code=""):
+    value = re.sub(r"\s+", "", str(city or ""))
+    for alias, region in sorted(_TRAVEL_EBIRD_CITY_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        if value.casefold() == alias.casefold():
+            return region
+    country = re.sub(r"\s+", "", str(country_code or "")).upper()
+    if re.fullmatch(r"[A-Z]{2}(?:-[A-Z0-9]{1,4})?", country):
+        return country
+    return None
+
+
+def _travel_recent_ebird(city, country_code, start_date):
+    region = _travel_ebird_region(city, country_code)
+    if not region:
+        raise ValueError("暂未识别该国外城市的 eBird 区域代码，请填写城市英文名或国家/地区代码（如 US-NY、JP-13）")
+    response = requests.get(
+        f"{EBIRD_API}data/obs/{region}/recent",
+        params={"maxResults": 300, "detail": "full"},
+        headers={"X-eBirdApiToken": EBIRD_API_KEY},
+        timeout=30,
+    )
+    if not response.ok:
+        raise RuntimeError(f"eBird 查询失败（HTTP {response.status_code}）")
+    cutoff = datetime.strptime(start_date, "%Y-%m-%d").date()
+    payload = response.json()
+    observations = []
+    for item in payload if isinstance(payload, list) else []:
+        obs_date = str(item.get("obsDt") or "")[:10]
+        try:
+            if datetime.strptime(obs_date, "%Y-%m-%d").date() < cutoff:
+                continue
+        except ValueError:
+            continue
+        observations.append({
+            "bird_name": item.get("comName") or item.get("sciName") or "未知鸟种",
+            "scientific_name": item.get("sciName") or "",
+            "location": item.get("locName") or "未提供地点",
+            "date": obs_date,
+            "count": item.get("howMany"),
+            "latitude": item.get("lat"),
+            "longitude": item.get("lng"),
+        })
+    return region, observations
+
+
+def _travel_prompt(destination, days, domestic, start_date, end_date, evidence):
+    source = "观鸟记录中心" if domestic else "eBird"
+    return (
+        "你是专业的观鸟旅行规划师。请严格依据下面的近期公开观测数据，生成一份适合手机阅读的中文观鸟旅行攻略。\n"
+        f"目的地：{destination}\n旅行天数：{days} 天\n数据范围：{start_date} 至 {end_date}\n数据来源：{source}\n"
+        "要求：按第一天、第二天……逐日安排；每天给出推荐地点、建议时段、重点鸟种和行程理由；"
+        "优先安排数据中记录较多或保护级别较高的鸟种；不要编造数据中没有的鸟种、地点、数量或确定性结论；"
+        "如果数据不足，要明确写出‘近期记录不足，建议现场灵活调整’，并补充安全、环保和天气提醒。"
+        "结尾增加‘近期鸟种速览’和‘数据说明’，说明有记录不代表当天一定能看到。\n\n"
+        "近期观测数据：\n" + evidence[:50000]
+    )
+
+
+def _call_travel_llm(prompt):
+    cfg = _deepseek_config()
+    if not cfg["api_key"]:
+        raise RuntimeError("尚未配置 DeepSeek API Key，请先在配置管理中填写")
+    payload = {
+        "model": cfg["model"],
+        "messages": [
+            {"role": "system", "content": "你只根据用户提供的观测证据回答，输出 Markdown，不要编造数据。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "stream": False,
+        "thinking": {"type": "disabled"},
+    }
+    if cfg["max_tokens"]:
+        payload["max_tokens"] = cfg["max_tokens"]
+    response = requests.post(
+        f"{cfg['base_url']}/chat/completions",
+        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=cfg["timeout"],
+    )
+    if not response.ok:
+        raise RuntimeError(f"DeepSeek 请求失败（{response.status_code}）")
+    answer = ((response.json().get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
+    if not answer:
+        raise RuntimeError("DeepSeek 没有返回旅行攻略")
+    return answer
+
+
+def _travel_record_views(records, travel_type):
+    """Return compact, JSON-safe records used by the paged travel guide UI."""
+    views = []
+    for item in records or []:
+        if travel_type == "domestic":
+            date = str(item.get("observation_time") or "")[:10]
+            location = item.get("observation_location") or "未提供地点"
+            bird = item.get("bird_name") or "未知鸟种"
+            count = item.get("bird_count")
+            level = item.get("protection_level") or item.get("catalog_protection_level") or ""
+        else:
+            date = str(item.get("date") or "")[:10]
+            location = item.get("location") or "未提供地点"
+            bird = item.get("bird_name") or "未知鸟种"
+            count = item.get("count")
+            level = ""
+        views.append({"date": date or "日期未提供", "location": location, "bird": bird,
+                      "count": count if count is not None else "", "protectionLevel": level})
+    return views
+
+
+def _travel_daily_plans(records, days):
+    by_date = {}
+    for row in records:
+        by_date.setdefault(row["date"], []).append(row)
+    dates = sorted(by_date.keys(), reverse=True)
+    plans = []
+    for index in range(days):
+        rows = by_date.get(dates[index], []) if index < len(dates) else []
+        locations = {}
+        for row in rows:
+            bucket = locations.setdefault(row["location"], {"location": row["location"], "birds": [], "records": 0})
+            bucket["records"] += 1
+            if row["bird"] not in bucket["birds"]:
+                bucket["birds"].append(row["bird"])
+        ranked = sorted(locations.values(), key=lambda item: (-len(item["birds"]), -item["records"], item["location"]))
+        plans.append({"day": index + 1, "date": dates[index] if index < len(dates) else "暂无记录",
+                      "locations": ranked[:5], "recordCount": len(rows)})
+    return plans
+
+
+def _travel_font_path():
+    candidates = [
+        "msyh.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/Library/Fonts/Microsoft/微软雅黑.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    ]
+    return next((path for path in candidates if os.path.exists(path)), None)
+
+
+def _travel_text_lines(text, font, max_width, draw):
+    lines = []
+    for raw_line in str(text or "").replace("\\r\\n", "\\n").splitlines() or [""]:
+        line = raw_line.rstrip()
+        if not line:
+            lines.append("")
+            continue
+        current = ""
+        for char in line:
+            candidate = current + char
+            if current and draw.textbbox((0, 0), candidate, font=font)[2] > max_width:
+                lines.append(current)
+                current = char
+            else:
+                current = candidate
+        lines.append(current)
+    return lines
+
+
+@app.route('/api/travel-recommendation/screenshot', methods=['POST'])
+def api_travel_recommendation_screenshot():
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("text") or "").replace("\\r\\n", "\\n").strip()
+    city = str(data.get("city") or "").strip()
+    if not text:
+        return jsonify({"error": "没有可生成截图的攻略内容"}), 400
+    if len(text) > 60000:
+        return jsonify({"error": "攻略内容过长，请精简后再生成截图"}), 400
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        font_path = _travel_font_path()
+        if not font_path:
+            return jsonify({"error": "未找到中文字体，无法生成攻略截图"}), 500
+        font_size = 50
+        padding = 100
+        line_spacing = 24
+        max_content_width = 1800
+        font = ImageFont.truetype(font_path, size=font_size)
+        measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        raw_lines = text.splitlines() or [""]
+        natural_width = max((measure.textbbox((0, 0), line, font=font)[2] for line in raw_lines), default=font_size)
+        content_width = min(max(natural_width, 600), max_content_width)
+        lines = _travel_text_lines(text, font, content_width, measure)
+        line_height = font_size + line_spacing
+        image_width = content_width + padding * 2
+        image_height = max(line_height * len(lines) + padding * 2, line_height + padding * 2)
+        image = Image.new("RGB", (image_width, image_height), color="white")
+        draw = ImageDraw.Draw(image)
+        y = padding
+        for line in lines:
+            draw.text((padding, y), line, fill="black", font=font)
+            y += line_height
+        download_dir = Path.home() / "Downloads"
+        download_dir.mkdir(parents=True, exist_ok=True)
+        safe_city = re.sub(r"[^\w\u4e00-\u9fff-]+", "", city)[:40] or "观鸟旅行"
+        filename = f"{safe_city}-观鸟旅行攻略-{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+        output_path = download_dir / filename
+        image.save(output_path, format="PNG")
+        return jsonify({
+            "status": "ok",
+            "filename": filename,
+            "directory": str(download_dir),
+        })
+    except Exception as exc:
+        return jsonify({"error": f"生成攻略截图失败: {exc}"}), 500
+
+
+@app.route('/api/travel-recommendation/generate', methods=['POST'])
+def api_travel_recommendation_generate():
+    data = request.get_json(silent=True) or {}
+    destination = str(data.get("city") or "").strip()
+    travel_type = str(data.get("travelType") or "domestic").strip().lower()
+    country_code = str(data.get("countryCode") or "").strip()
+    try:
+        days = int(data.get("days") or 1)
+    except (TypeError, ValueError):
+        days = 0
+    if not destination:
+        return jsonify({"error": "请输入旅行城市"}), 400
+    if days < 1 or days > 30:
+        return jsonify({"error": "旅游天数请输入 1 到 30 天"}), 400
+    if travel_type not in ("domestic", "international"):
+        return jsonify({"error": "旅行范围参数无效"}), 400
+    today = datetime.now().date()
+    end_date = today.strftime("%Y-%m-%d")
+    start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+    try:
+        if travel_type == "domestic":
+            province, city = _extract_ai_location(destination)
+            if not province:
+                province = destination if destination.endswith(("省", "市", "自治区")) else destination + "市"
+                city = "" if province.endswith("省") else destination
+            details = filter_bird_record_blacklist(fetch_birdreport_public_area_details(province, start_date, end_date, city))
+            levels = get_protected_wildlife_level({item.get("bird_name") for item in details})
+            evidence_rows = [
+                f"地点：{item.get('observation_location') or '-'} | 鸟种：{item.get('bird_name') or '-'} | 保护级别：{levels.get(item.get('bird_name')) or '未匹配'} | 日期：{item.get('observation_time') or '-'} | 数量：{item.get('bird_count') or '-'}"
+                for item in details
+            ]
+            query_destination = province + (city if city and city != province else "")
+            source = "观鸟记录中心"
+            travel_records = _travel_record_views(details, "domestic")
+        else:
+            region, observations = _travel_recent_ebird(destination, country_code, start_date)
+            evidence_rows = [
+                f"地点：{item['location']} | 鸟种：{item['bird_name']}（{item['scientific_name']}） | 日期：{item['date']} | 数量：{item['count'] or '-'}"
+                for item in observations
+            ]
+            query_destination = destination
+            source = f"eBird · {region}"
+            travel_records = _travel_record_views(observations, "international")
+        evidence = "\n".join(evidence_rows) or "近七天没有返回观测记录。"
+        prompt = _travel_prompt(query_destination, days, travel_type == "domestic", start_date, end_date, evidence)
+        answer = _call_travel_llm(prompt)
+        return jsonify({
+            "status": "ok", "city": destination, "days": days, "travelType": travel_type,
+            "countryCode": country_code, "startDate": start_date,
+            "endDate": end_date, "source": source, "recordCount": len(evidence_rows),
+            "prompt": prompt, "answer": answer, "answerHtml": _render_ai_markdown(answer),
+            "dailyPlans": _travel_daily_plans(travel_records, days),
+            "records": travel_records,
+        })
+    except BirdreportCaptchaRequired as e:
+        return jsonify({"error": str(e), "captchaRequired": True}), 429
+    except (requests.RequestException, RuntimeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/ai-bird-chat', methods=['POST'])
 def api_ai_bird_chat():
     data = request.get_json(silent=True) or {}
     user_message = str(data.get("message") or "").strip()
     if not user_message:
         return jsonify({"error": "请输入问题"}), 400
+    if str(data.get("source") or "birdreport").lower() == "ebird":
+        try:
+            answer, summary = _ebird_answer(user_message)
+            return jsonify({"answer": answer, "answer_html": _render_ai_markdown(answer), "records_queried": True, "query_summary": summary, "location_details": []})
+        except (requests.RequestException, RuntimeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 502
     history = []
     for item in (data.get("messages") or [])[-10:]:
         if isinstance(item, dict) and item.get("role") in ("user", "assistant") and item.get("content"):
@@ -3565,6 +3942,8 @@ def tool_page(tool_id):
         return render_template('tool_photo_classify.html', tools=TOOLS)
     if tool_id == "bird-navigation":
         return render_template('tool_bird_navigation.html', tools=TOOLS)
+    if tool_id == "travel-recommendation":
+        return render_template('tool_travel_recommendation.html', tools=TOOLS)
     if tool_id == "image-generation":
         return render_template('tool_image_generation.html', tools=TOOLS)
     if tool_id == "git-branch-manager":

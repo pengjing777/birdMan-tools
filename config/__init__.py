@@ -8,6 +8,14 @@ _BUNDLED_SETTINGS_PATH = os.path.join(_CONFIG_DIR, "settings.json")
 _APP_NAME = "鸟友工具箱"
 
 
+def _legacy_settings_paths():
+    base_dir = os.path.expanduser("~/Library/Application Support")
+    return [
+        os.path.join(base_dir, "ToolBox", "settings.json"),
+        os.path.join(base_dir, "AI观鸟助手", "settings.json"),
+    ]
+
+
 def _get_settings_path():
     """Use a user-writable config path when running as a bundled macOS app."""
     if getattr(sys, "frozen", False):
@@ -16,6 +24,9 @@ def _get_settings_path():
         )
         os.makedirs(app_support_dir, exist_ok=True)
         settings_path = os.path.join(app_support_dir, "settings.json")
+        legacy_settings_path = next((path for path in _legacy_settings_paths() if os.path.exists(path)), None)
+        if not os.path.exists(settings_path) and legacy_settings_path:
+            shutil.copy2(legacy_settings_path, settings_path)
         if not os.path.exists(settings_path) and os.path.exists(_BUNDLED_SETTINGS_PATH):
             shutil.copy2(_BUNDLED_SETTINGS_PATH, settings_path)
         return settings_path
@@ -67,10 +78,18 @@ _DEFAULTS = {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
     },
     "deepseek": {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "api_key": "",
         "base_url": "https://api.deepseek.com",
         "timeout": 90,
+        "max_tokens": 0,
+    },
+    "ai_bird_preferences": {
+        "province": "",
+        "city": "",
+        "district": "",
+        "interested_birds": "鸮,一级保护动物",
+        "uninterested_birds": "麻雀,白头鹎,绿头鸭,鸳鸯,珠颈斑鸠,喜鹊,灰喜鹊,灰椋鸟,大嘴乌鸦,小鷿鷈,凤头鷿鷈,普通鸬鹚,鸿雁,灰头绿啄木鸟,大斑啄木鸟,普通翠鸟,家燕,戴胜,白鹭,苍鹭",
     },
     "bird_record_blacklist": [],
     "service_vue_frontend": {
@@ -159,6 +178,22 @@ class ConfigManager:
                 self._data = _deep_merge(self._data, user_data)
             except Exception as e:
                 print(f"[Config] 加载 settings.json 失败: {e}")
+        # Earlier desktop builds used different Application Support directories.
+        # Keep a configured Key when the new app directory already exists but has no Key yet.
+        current_key = str((self._data.get("deepseek") or {}).get("api_key") or "").strip()
+        if not current_key:
+            for legacy_path in _legacy_settings_paths():
+                if legacy_path == _SETTINGS_PATH or not os.path.isfile(legacy_path):
+                    continue
+                try:
+                    with open(legacy_path, "r", encoding="utf-8") as f:
+                        legacy_key = str(((json.load(f).get("deepseek") or {}).get("api_key") or "")).strip()
+                    if legacy_key:
+                        self._data.setdefault("deepseek", {})["api_key"] = legacy_key
+                        self._save()
+                        break
+                except Exception:
+                    continue
 
     def _save(self):
         os.makedirs(_CONFIG_DIR, exist_ok=True)
