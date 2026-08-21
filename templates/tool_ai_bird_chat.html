@@ -8,16 +8,19 @@
 
 {% block head_extra %}
 <style>
-    .main-content:has(.chat-shell) { max-width: 1560px; display: flex; flex-direction: column; }
-    .chat-shell { max-width: 100%; margin: 0 auto; flex: 1; display: flex; flex-direction: column; min-height: 0; }
-    .chat-title { margin-bottom: 14px; }
+    /* 聊天页占满视口高度，左右保留适度留白，聊天卡占满剩余空间 */
+    .main-content:has(.chat-shell) { max-width: 1720px; display: flex; flex-direction: column; height: calc(100vh - 66px); min-height: 540px; padding: clamp(14px, 1.5vw, 22px) clamp(40px, calc(2.4vw + 20px), 56px) 24px; }
+    .chat-shell { max-width: 100%; min-width: 0; width: 100%; margin: 0 auto; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .chat-title { margin-bottom: 14px; display:flex; align-items:center; justify-content:space-between; gap:18px; }
     .chat-title h1 { margin: 0 0 6px; font-size: 1.35rem; }
     .chat-title p { margin: 0; color: var(--text-muted); font-size: .88rem; }
-    .chat-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); flex: 1; display: flex; flex-direction: column; min-height: calc(100vh - 180px); }
-    .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 24px; background: #f8fafc; display: flex; flex-direction: column; gap: 14px; }
-    .msg { max-width: 86%; padding: 12px 16px; border-radius: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+    /* 聊天卡弹性占满剩余高度：内容再多也在内部滚动，不撑大卡片、不产生下方留白 */
+    .chat-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); box-sizing: border-box; flex: 1; min-height: 0; width: 100%; max-width: 100%; display: flex; flex-direction: column; }
+    /* 消息区宽度锁定：横向溢出一律裁剪，任何内容（宽表格/长文本）都不会把聊天卡撑宽 */
+    .messages { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; width: 100%; max-width: 100%; padding: 22px 24px; background: #f8fafc; display: flex; flex-direction: column; gap: 14px; }
+    .msg { max-width: 86%; min-width: 0; padding: 12px 16px; border-radius: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
     .msg.user { align-self: flex-end; color: #fff; background: #6a9ee8; border-bottom-right-radius: 3px; }
-    .msg.assistant { align-self: flex-start; max-width: 94%; background: #fff; border: 1px solid var(--border-color); border-bottom-left-radius: 3px; white-space: normal; }
+    .msg.assistant { align-self: flex-start; max-width: 94%; min-width: 0; background: #fff; border: 1px solid var(--border-color); border-bottom-left-radius: 3px; white-space: normal; }
     .msg-copy { display:block; margin:10px 0 0 auto; border:1px solid var(--border-color); border-radius:6px; background:#fff; color:var(--text-muted); padding:4px 8px; font-size:.75rem; cursor:pointer; }
     .msg-copy:hover { color:#5d8ad6; border-color:#b3cdf5; }
     .copy-selection-btn {
@@ -43,7 +46,7 @@
     .copy-selection-btn.show { display: inline-flex; }
     .copy-selection-btn:hover { background: var(--hover-bg); color: var(--primary-color); border-color: #b4ded8; }
     .msg.system { align-self: center; color: var(--text-muted); font-size: .82rem; background: transparent; }
-    .markdown-body { min-width: 0; overflow-wrap: anywhere; }
+    .markdown-body { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
     .markdown-body > :first-child { margin-top: 0; }
     .markdown-body > :last-child { margin-bottom: 0; }
     .markdown-body p { margin: .45em 0; }
@@ -55,7 +58,7 @@
     .markdown-body li + li { margin-top: .2em; }
     .markdown-body blockquote { margin: .65em 0; padding: .35em .8em; border-left: 3px solid #b3cdf5; color: var(--text-muted); background: #f8fafc; }
     .markdown-body code { padding: .12em .35em; border-radius: 4px; background: #eef2f7; color: #be185d; font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .markdown-body pre { margin: .7em 0; padding: 11px 12px; overflow-x: auto; border-radius: 7px; background: #172033; color: #e5edf7; line-height: 1.55; -webkit-overflow-scrolling: touch; }
+    .markdown-body pre { margin: .7em 0; padding: 11px 12px; overflow-x: auto; border-radius: 7px; background: #172033; color: #e5edf7; line-height: 1.55; -webkit-overflow-scrolling: touch; max-width: 100%; box-sizing: border-box; }
     .markdown-body pre code { padding: 0; background: transparent; color: inherit; white-space: pre; }
     .markdown-body table { display: block; width: max-content; max-width: 100%; margin: .7em 0; overflow-x: auto; border-collapse: collapse; font-size: .9em; }
     .markdown-body th, .markdown-body td { padding: 6px 9px; border: 1px solid var(--border-color); text-align: left; white-space: nowrap; }
@@ -63,16 +66,24 @@
     .markdown-body a { color: #5d8ad6; overflow-wrap: anywhere; }
     .markdown-body hr { border: 0; border-top: 1px solid var(--border-color); margin: .8em 0; }
     .composer { padding: 14px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; align-items: flex-end; }
+    /* display:flex 会覆盖浏览器默认的 [hidden] 规则，明确保证两种输入区互斥显示。 */
+    .composer[hidden] { display: none !important; }
     .composer textarea { flex: 1; min-height: 46px; max-height: 140px; resize: vertical; border: 1px solid var(--border-color); border-radius: 8px; padding: 11px 12px; font: inherit; outline: none; }
     .composer textarea:focus { border-color: #6a9ee8; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
     .composer button { min-height: 46px; background: #6a9ee8; color: #fff; border: 0; border-radius: 8px; padding: 0 18px; font-weight: 700; cursor: pointer; }
     .composer button:disabled { opacity: .55; cursor: wait; }
+    .time-query-composer { align-items: flex-end; flex-wrap: wrap; }
+    .time-query-field { display: grid; gap: 6px; color: var(--text-muted); font-size: .78rem; font-weight: 700; }
+    .time-query-field.address { flex: 1 1 260px; }
+    .time-query-field input { height: 52px; box-sizing: border-box; padding: 9px 13px; border: 1px solid var(--border-color); border-radius: 9px; background: #fff; color: var(--text-main); font: inherit; }
+    .time-query-field input[type="date"] { width: 190px; min-width: 190px; font-size: 1rem; }
+    .time-query-field input:focus { outline: none; border-color: #6a9ee8; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
     .suggestions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .suggestions button { border: 1px solid #cfe0fb; color: #5d8ad6; background: #eff6ff; border-radius: 999px; padding: 7px 11px; cursor: pointer; }
     .tool-note { margin-top: 12px; color: var(--text-muted); font-size: .8rem; }
-    .query-trace { align-self: flex-start; max-width: 94%; color: #4a9c93; font-size: .78rem; }
+    .query-trace { align-self: flex-start; max-width: 94%; min-width: 0; color: #4a9c93; font-size: .78rem; }
     .detail-toggle { align-self: flex-start; border: 1px solid #cfe0fb; color: #5d8ad6; background: #eff6ff; border-radius: 7px; padding: 7px 10px; cursor: pointer; font-weight: 650; }
-    .location-detail { align-self: flex-start; width: min(94%, 850px); padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background:#fff; }
+    .location-detail { align-self: flex-start; width: min(94%, 850px); max-width: 94%; min-width: 0; box-sizing: border-box; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background:#fff; }
     .location-detail[hidden] { display:none; }
     .location-detail table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:.82rem; }
     .location-detail th, .location-detail td { padding:8px; border-bottom:1px solid var(--border-color); text-align:left; vertical-align:top; overflow-wrap:anywhere; }
@@ -98,7 +109,7 @@
     .key-dialog h2 { margin:0 0 8px; font-size:1.1rem; } .key-dialog p { margin:0 0 14px; color:var(--text-muted); font-size:.84rem; line-height:1.6; }
     .key-dialog input { width:100%; box-sizing:border-box; padding:10px 11px; border:1px solid var(--border-color); border-radius:7px; font:inherit; }
     .key-error { min-height:20px; margin-top:7px; color:#cc6b66; font-size:.82rem; } .key-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
-    .chat-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin:0 0 12px; }
+    .chat-toolbar { display:contents; }
     .chat-status { color:var(--text-muted); font-size:.84rem; }
     .toolbar-actions { display:flex; gap:8px; }
     .toolbar-button { border:1px solid var(--border-color); border-radius:7px; background:#fff; color:var(--text-main); padding:8px 11px; cursor:pointer; font-weight:700; }
@@ -113,7 +124,7 @@
     .preference-field input,.preference-field textarea,.model-select { width:100%; box-sizing:border-box; border:1px solid var(--border-color); border-radius:7px; padding:9px 10px; background:#fff; color:var(--text-main); font:inherit; }
     .preference-field textarea { min-height:64px; resize:vertical; line-height:1.5; }
     .preferences-actions { display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border-color); }
-    @media (max-width:700px) { .preference-grid { grid-template-columns:1fr; } .chat-toolbar { align-items:flex-start; flex-direction:column; } .chat-card { min-height: 62vh; } .messages { padding: 16px; } }
+    @media (max-width:700px) { .chat-title { align-items:flex-start; flex-direction:column; } .toolbar-actions { flex-wrap:wrap; } .preference-grid { grid-template-columns:1fr; } .main-content:has(.chat-shell) { height: auto; min-height: calc(100vh - 62px); padding: 14px 8px 20px; } .chat-card { flex: 1; min-height: 0; } .messages { padding: 16px; } .time-query-field { flex: 1 1 calc(50% - 5px); } .time-query-field.address { flex-basis:100%; } }
 </style>
 {% endblock %}
 
@@ -121,9 +132,7 @@
 <div class="chat-shell">
     <div class="chat-title">
         <h1><i class="fas fa-comments" style="color:#6a9ee8;"></i> AI 观鸟问答</h1>
-    </div>
-    <div class="chat-toolbar">
-        <div class="toolbar-actions"><button id="sourceQuick" class="toolbar-button" onclick="toggleSource()">记录中心</button><button id="modelQuick" class="toolbar-button model" onclick="toggleModel()">Flash</button><button class="toolbar-button" onclick="clearChatContent()"><i class="fas fa-trash-can"></i> 清空内容</button><button class="toolbar-button" onclick="openPreferences()"><i class="fas fa-sliders"></i> 偏好</button></div>
+        <div class="chat-toolbar"><div class="toolbar-actions"><button id="timeQueryQuick" class="toolbar-button" onclick="toggleTimeQuery()"><i class="fas fa-calendar-days"></i> 指定时间查询</button><button id="sourceQuick" class="toolbar-button" onclick="toggleSource()">记录中心</button><button id="modelQuick" class="toolbar-button model" onclick="toggleModel()">Flash</button><button class="toolbar-button" onclick="clearChatContent()"><i class="fas fa-trash-can"></i> 清空内容</button><button class="toolbar-button" onclick="openPreferences()"><i class="fas fa-sliders"></i> 偏好</button></div></div>
     </div>
     <div class="chat-card">
         <div id="messages" class="messages">
@@ -132,6 +141,12 @@
         <div class="composer">
             <textarea id="question" placeholder="输入你的观鸟问题，例如：这两天北京天坛有什么鸟？" onkeydown="handleKey(event)"></textarea>
             <button id="sendButton" onclick="sendMessage()"><i class="fas fa-paper-plane"></i> 发送</button>
+        </div>
+        <div id="timeQueryComposer" class="composer time-query-composer" hidden>
+            <label class="time-query-field address">地址<input id="timeQueryAddress" type="text" maxlength="100" placeholder="例如：北京天坛、青岛市崂山区"></label>
+            <label class="time-query-field">开始日期<input id="timeQueryStart" type="date" onchange="this.blur()"></label>
+            <label class="time-query-field">结束日期<input id="timeQueryEnd" type="date" onchange="this.blur()"></label>
+            <button id="timeQueryButton" onclick="submitTimeQuery()"><i class="fas fa-magnifying-glass"></i> 查询</button>
         </div>
     </div>
     {% set suggestion_place = '广州' %}
@@ -191,6 +206,7 @@
 <script>
     const chatHistory = [];
     const CHAT_CACHE_KEY = 'ai-bird-chat-history-v1';
+    const TIME_QUERY_MODE_KEY = 'ai-bird-time-query-mode-v1';
     const MAX_CHAT_EXCHANGES = 10;
     const messagesEl = document.getElementById('messages');
     const questionEl = document.getElementById('question');
@@ -202,6 +218,62 @@
     let activeModel = 'deepseek-v4-flash';
     let activeMaxTokens = '';
     let dataSource = 'birdreport';
+    let timeQueryMode = false;
+
+    function localDateValue(date) {
+        const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        return offsetDate.toISOString().slice(0, 10);
+    }
+
+    function initialiseTimeQueryDates() {
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        document.getElementById('timeQueryStart').value = localDateValue(yesterday);
+        document.getElementById('timeQueryEnd').value = localDateValue(today);
+    }
+
+    function normaliseQueryDate(value) {
+        const raw = String(value || '').trim().replace(/\//g, '-');
+        const match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (!match) return '';
+        return match[1] + '-' + match[2].padStart(2, '0') + '-' + match[3].padStart(2, '0');
+    }
+
+    function setTimeQueryMode(enabled, focusInput) {
+        timeQueryMode = Boolean(enabled);
+        try { localStorage.setItem(TIME_QUERY_MODE_KEY, timeQueryMode ? '1' : '0'); } catch (error) {}
+        document.querySelector('.composer:not(#timeQueryComposer)').hidden = timeQueryMode;
+        document.getElementById('timeQueryComposer').hidden = !timeQueryMode;
+        const button = document.getElementById('timeQueryQuick');
+        button.innerHTML = timeQueryMode
+            ? '<i class="fas fa-comments"></i> 返回智能问答'
+            : '<i class="fas fa-calendar-days"></i> 指定时间查询';
+        if (timeQueryMode) {
+            if (!document.getElementById('timeQueryStart').value || !document.getElementById('timeQueryEnd').value) initialiseTimeQueryDates();
+            if (focusInput) setTimeout(() => document.getElementById('timeQueryAddress').focus(), 0);
+        } else if (focusInput) {
+            questionEl.focus();
+        }
+    }
+
+    function toggleTimeQuery() { setTimeQueryMode(!timeQueryMode, true); }
+
+    function restoreTimeQueryMode() {
+        let enabled = false;
+        try { enabled = localStorage.getItem(TIME_QUERY_MODE_KEY) === '1'; } catch (error) {}
+        setTimeQueryMode(enabled, false);
+    }
+
+    function submitTimeQuery() {
+        const address = document.getElementById('timeQueryAddress').value.trim();
+        const startDate = normaliseQueryDate(document.getElementById('timeQueryStart').value);
+        const endDate = normaliseQueryDate(document.getElementById('timeQueryEnd').value);
+        if (!address) { appendMessage('system', '请输入查询地址。'); document.getElementById('timeQueryAddress').focus(); return; }
+        if (!startDate || !endDate) { appendMessage('system', '请选择完整的开始和结束日期。'); return; }
+        if (startDate > endDate) { appendMessage('system', '开始日期不能晚于结束日期。'); return; }
+        sendMessage('查询' + address + '从' + startDate + '到' + endDate + '的鸟类记录，并根据真实公开记录回答。');
+    }
 
     function escapeHtml(value) {
         return String(value == null ? '' : value).replace(/[&<>"']/g, function(char) {
@@ -328,7 +400,11 @@
         try {
             const response = await fetch('/api/config'); const cfg = await response.json(); const deepseek = cfg.deepseek || {};
             deepseekKey = deepseek.api_key || (deepseek.api_key_configured ? 'configured' : ''); activeModel = deepseek.model === 'deepseek-v4-pro' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'; activeMaxTokens = deepseek.max_tokens || ''; aiPreferences = Object.assign(aiPreferences, cfg.ai_bird_preferences || {}); refreshPreferenceUi();
-        } catch (error) { deepseekKey = ''; refreshPreferenceUi(); }
+        } catch (error) {
+            // 配置接口临时失败时保留已知状态，避免清空内容或网络抖动后再次要求输入 Key。
+            if (!deepseekKey) deepseekKey = '';
+            refreshPreferenceUi();
+        }
     }
     function openKeyDialog(required) { keyDialogRequired = Boolean(required); document.getElementById('keyModal').hidden = false; document.getElementById('keyError').textContent = ''; document.getElementById('deepseekKeyInput').value = ''; setTimeout(() => document.getElementById('deepseekKeyInput').focus(), 50); }
     function closeKeyDialog() { keyDialogRequired = false; document.getElementById('keyModal').hidden = true; }
@@ -353,12 +429,18 @@
     async function sendMessage(retryMessage) {
         const message = (retryMessage || questionEl.value).trim();
         if (!message || sendButton.disabled) return;
-        if (!deepseekKey) { openKeyDialog(true); return; }
+        // 清空内容只清理对话缓存，不应影响已保存的 Key；发送前同步一次配置，兼容旧版页面状态。
+        if (!deepseekKey) {
+            await loadDeepseekConfig();
+            if (!deepseekKey) { openKeyDialog(true); return; }
+        }
         if (!retryMessage) {
             appendMessage('user', message);
             questionEl.value = '';
         }
+        const timeQueryButton = document.getElementById('timeQueryButton');
         sendButton.disabled = true;
+        timeQueryButton.disabled = true;
         sendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中';
         try {
             const response = await fetch('/api/ai-bird-chat', {
@@ -384,8 +466,10 @@
             appendMessage('system', '请求失败：' + error.message);
         } finally {
             sendButton.disabled = false;
+            timeQueryButton.disabled = false;
             sendButton.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
-            questionEl.focus();
+            if (timeQueryMode) document.getElementById('timeQueryAddress').focus();
+            else questionEl.focus();
         }
     }
 
@@ -526,6 +610,7 @@
     });
     document.addEventListener('scroll', hideCopyButton, true);
 
+    restoreTimeQueryMode();
     restoreChatCache();
     loadDeepseekConfig().then(() => { if (!deepseekKey) openKeyDialog(true); });
 </script>

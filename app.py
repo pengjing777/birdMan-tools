@@ -228,15 +228,17 @@ def get_ordered_tools():
     tool_map = {tool["id"]: tool for tool in TOOLS}
     configured_order = _manager.get_all().get("home_tool_order", [])
     enabled = _manager.get_all().get("home_tool_enabled") or {}
+    # 配置管理为系统级入口，不占主页工作区卡片（由右上角设置入口进入）。
+    hidden_ids = {"config-manager"}
     ordered = []
     seen = set()
     for tool_id in configured_order:
         tool = tool_map.get(tool_id)
-        if tool and tool_id not in seen and enabled.get(tool_id, tool_id != "photo-classify") is not False:
+        if tool and tool_id not in hidden_ids and tool_id not in seen and enabled.get(tool_id, True) is not False:
             ordered.append(tool)
             seen.add(tool_id)
     for tool in TOOLS:
-        if tool["id"] not in seen and enabled.get(tool["id"], tool["id"] != "photo-classify") is not False:
+        if tool["id"] not in seen and tool["id"] not in hidden_ids and enabled.get(tool["id"], True) is not False:
             ordered.append(tool)
     return ordered
 
@@ -2413,9 +2415,11 @@ def _extract_ai_landmark(question):
 def _requires_ai_bird_records(question):
     value = re.sub(r"\s+", "", str(question or ""))
     time_sensitive = re.search(r"最近|近期|今天|今日|当天|当日|昨日|昨天|前天|这两天|这几天|近[一二三四五六七八九十\d]+天|本周|这周|本月|这个月|今年", value)
+    # 指定时间查询模式会提交 ISO 日期范围；它同样必须强制查询真实记录。
+    explicit_date_range = re.search(r"20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?(?:至|到|~|～|-)20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?", value)
     bird_context = re.search(r"鸟|观测|观察|记录|鸟讯|鸟况|值得看|能看到|去哪看|去哪里看", value)
     live_question = re.search(r"有什么鸟|有哪些鸟|哪些鸟|哪里有鸟|哪里能看|去哪看鸟|去哪里看鸟|能看到什么|值得看什么|鸟讯|鸟况|观鸟记录|观察记录|观测记录|记录最多|鸟种最多|近期记录|最新记录", value)
-    return bool(live_question or (time_sensitive and bird_context))
+    return bool(live_question or ((time_sensitive or explicit_date_range) and bird_context))
 
 
 def _bird_ai_system_prompt(today):
@@ -2430,7 +2434,22 @@ def _bird_ai_system_prompt(today):
         "【证据规则】地点鸟类问题只能回答本次记录中心工具明确返回的鸟种和字段，不得用常识、百科或其他地点记录补全，不得编造鸟种、数量、时间、区域或概率。"
         "没有相关记录时必须明确回答‘目前观鸟记录中心没有查询到该地点的相关记录。’，不要猜测。‘有记录’不等于现在一定能看到。\n"
         "【分析规则】只有返回数据支持时，才能判断常见、稀有、候鸟、留鸟、最佳月份或观察频率；缺失信息写‘记录数据未提供，无法判断’。鸟名使用中国大陆常用中文名。\n"
-        "【回答格式】地点问题按‘## 📍 地点概况’、‘## 🐦 已记录鸟类’、‘## ⭐ 推荐重点观察’、‘## 📅 最佳观鸟时间’、‘## 📷 观察建议’输出；已记录鸟类优先使用‘鸟名｜类型｜出现特点’表格，推荐重点按记录频率排序。通用观察建议可以给出，但必须和数据库事实区分。"
+        "【回答格式】地点问题必须严格按以下三段结构输出，不得输出这三段以外的内容：\n"
+        "1. 【⭐ 推荐重点观察】开头用‘## ⭐ 推荐重点观察’。只列本次查询记录中出现的一级、二级保护动物（标注Ⅰ级/Ⅱ级），"
+        "按保护级别从高到低排列；除非该保护动物在查询地点非常常见（例如北京的鸳鸯、鸿雁），这类常见保护鸟不列入推荐。没有则写‘本次记录中未出现需要重点观察的保护动物。’\n"
+        "2. 【🗺️ 推荐鸟点】开头用‘## 🗺️ 推荐鸟点’。从记录中选择值得推荐的鸟点（优先保护动物多、鸟种总数多的地点，最多选5个），"
+        "每个鸟点单独输出一个 Markdown 表格，表格固定列如下：\n"
+        "   | 分类 | 鸟种 |\n"
+        "   | --- | --- |\n"
+        "   | 猛禽 | xxx、xxx |\n"
+        "   | 林鸟 | xxx、xxx |\n"
+        "   | 水鸟 | xxx、xxx |\n"
+        "   | 迁徙候鸟 | xxx、xxx |\n"
+        "   | 主要记录时间 | 如：清晨5:30-8:00 |\n"
+        "   表格规则：①每格只写该分类下本次记录出现的鸟名，用顿号分隔，不写数量；②排除常见鸟（喜鹊、乌鸦、夜鹭、苍鹭、黑水鸡、白骨顶、麻雀、白头鹎等）；"
+        "③不确定是否真实记录、疑似误认的鸟名在名字后标注‘❓’；④该分类没有记录时写‘无记录’；⑤‘主要记录时间’根据该鸟点记录的时间字段归纳一个时间段。\n"
+        "3. 【📅 最佳观察时间与建议】开头用‘## 📅 最佳观察时间与建议’。根据各鸟点‘主要记录时间’综合给出最佳观察时间段（如清晨/傍晚几点到几点），"
+        "并给出针对性观察建议（如优先去哪个鸟点、重点找哪些鸟、用什么方式观察），建议必须基于本次记录数据，不得编造。\n"
         f"【鸟种偏好】优先突出关注鸟种或一级保护动物；不关注鸟种在地点明细中不展示，除非用户主动询问。关注鸟种：{preferences['interested_birds']}。不关注鸟种：{preferences['uninterested_birds']}。"
     )
 
@@ -2453,7 +2472,7 @@ def _chinese_number(value):
 def _extract_ai_date_range(question, today):
     """从用户原话确定日期，优先级高于模型传回的日期参数。"""
     text = re.sub(r"\s+", "", str(question or ""))
-    date_match = re.search(r"(20\d{2})[-年](\d{1,2})[-月](\d{1,2})日?(?:至|到|~|～|-)(20\d{2})?[-年]?(\d{1,2})[-月](\d{1,2})日?", text)
+    date_match = re.search(r"(20\d{2})[-/]?[年]?(\d{1,2})[-/]?[月]?(\d{1,2})日?(?:至|到|~|～|-)(20\d{2})?[-年/]?(\d{1,2})[-月/]?(\d{1,2})日?", text)
     if date_match:
         try:
             start = datetime(int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3)))
@@ -2461,7 +2480,7 @@ def _extract_ai_date_range(question, today):
             return start, end, "user"
         except ValueError:
             pass
-    single_date = re.search(r"(20\d{2})[-年](\d{1,2})[-月](\d{1,2})日?", text)
+    single_date = re.search(r"(20\d{2})[-/]?[年]?(\d{1,2})[-/]?[月]?(\d{1,2})日?", text)
     if single_date:
         try:
             day = datetime(int(single_date.group(1)), int(single_date.group(2)), int(single_date.group(3)))
@@ -2569,7 +2588,12 @@ def _ai_bird_records_tool(arguments, question="", conversation_context=""):
         bird_details = []
         for name in bird_names:
             matching = next((d for d in item_details if d.get("bird_name") == name), {})
-            bird_details.append({"name": name, "protection_level": levels.get(name) or "", "uncertain": bool(matching.get("bird_uncertain"))})
+            bird_details.append({
+                "name": name,
+                "protection_level": levels.get(name) or "",
+                "uncertain": bool(matching.get("bird_uncertain")),
+                "time": str(matching.get("observation_time") or ""),
+            })
         locations.append({
             "location": item["location"],
             "species_count": item["species_count"],
